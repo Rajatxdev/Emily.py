@@ -14,9 +14,9 @@ from openai import OpenAI
 # For production, use environment variables:
 # os.environ.get('TELEGRAM_TOKEN') etc.
 
-TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', '8328433258:AAFEni1WqLZ3U_6BdrOlvOLg9a2xJoR2lv4')
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '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')
-ADMIN_USER_ID = int(os.environ.get('ADMIN_USER_ID', '7506489625')) # Replace with your user ID
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'Enter your Telegram bot token')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', 'Enter your API key here')
+ADMIN_USER_ID = int(os.environ.get('ADMIN_USER_ID', '750648958625')) # Replace with your user ID
 
 # --- Set up logging ---
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
