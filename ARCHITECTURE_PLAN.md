@@ -1,66 +1,52 @@
-# Emily — Production Architecture Plan
+# Emily v2 Architecture
 
-## Current assessment
+Keep Emily intentionally small.
 
-The repository is a small Telegram bot with one monolithic Python file, SQLite persistence, OpenAI chat completions, simple quota/credits, group-only replies, and admin commands.
+```text
+Telegram
+   ↓
+Python bot (one process)
+   ├─ AI brain
+   ├─ Memory
+   ├─ Quota / credits
+   ├─ Group features
+   └─ Admin panel
+   ↓
+SQLite
+```
 
-## Target architecture
+## Storage
 
-Telegram Bot API
-    -> python-telegram-bot application
-    -> update routing / authorization / anti-spam guards
-    -> service layer
-       -> conversation memory
-       -> quota + credits
-       -> AI gateway
-       -> admin operations
-    -> PostgreSQL (production) / SQLite (development fallback)
+One SQLite database: `emily.db`.
 
-Optional later:
-    -> Redis for distributed rate limiting / short-lived cache
-    -> FastAPI for a web admin dashboard, Mini App, and external API endpoints
-    -> background worker only when jobs such as broadcasts, scheduled digests, or media processing become large enough to need one
+Tables: `users`, `messages`, `memories`, `roasts`, `group_settings`, `errors`.
 
-## Deliberately not included yet
+The old `alisa_bot.db` user records are migrated automatically on first startup when the new database is empty.
 
-CDN, Kubernetes, Celery, Kafka, vector databases, and a separate frontend/backend deployment are not justified by the current 20–50 user scale unless a concrete requirement appears.
+## AI context
 
-## Product priorities
+Each generation uses:
 
-1. Make every reply reliable and fast.
-2. Give Emily real continuity instead of one-message prompts.
-3. Make group behavior intentional: mention/reply triggers, per-group personality settings, and useful group tools.
-4. Add opt-in memory with clear user controls.
-5. Make quotas, credits, moderation, and admin operations atomic and auditable.
-6. Track model usage/cost and failures.
-7. Add high-value features before cosmetic complexity.
+```text
+small recent history
++
+relevant saved memories
++
+current request
++
+current Emily mode
+```
 
-## Standout features
+No vector database is needed at this size.
 
-- Emily Modes: Bestie, Study Buddy, Roast Queen, Calm Mode, Group Host.
-- Opt-in Memory Cards: nickname, language preference, interests, recurring preferences; `/memory`, `/forget`, and `/forget_all` controls.
-- Conversation continuity with a bounded recent-history window plus compact user memory.
-- Group-aware personality: inside-joke friendly but respectful; only answer when mentioned/replied to unless the group explicitly enables ambient mode.
-- Emily Moments: occasional prompts, compliments, mini challenges, and weekly recap — configurable per chat.
-- Smart utilities: summarize a discussion, translate, explain, create a poll, convert a request into a task/reminder.
-- Fun layer: roast battles, trivia, mood/vibe check, streaks, and lightweight group games.
-- Admin control center later: users, groups, quota, model usage, moderation, feature flags, broadcasts, health, and audit log.
+## Product rules
 
-## Security baseline
+- Free: 50 AI replies/day
+- Credits: 1 credit = 1 AI generation
+- Premium later: higher quota + special features
 
-- Secrets must be environment variables; no placeholder credentials in executable defaults.
-- Admin authorization must be explicit and checked for every privileged operation.
-- Treat Telegram user/chat IDs as identifiers, not display names.
-- Keep personal message retention minimal and configurable.
-- Never log raw user prompts or model responses by default.
-- Add request timeouts, bounded retries, and backoff for external APIs.
-- Make quota/credit consumption atomic to prevent double-spending under concurrent messages.
-- Do not let model output execute arbitrary application actions without validated tool permissions.
+A failed AI generation is refunded so a temporary provider/network failure does not consume the user's allowance.
 
-## Deployment recommendation
+## Scaling decision
 
-Start with one long-running worker/container. Use managed PostgreSQL for production persistence. Add Redis only when multiple bot instances or distributed throttling are actually required. Add FastAPI when a web admin/Mini App becomes a real product surface.
-
-## CI/CD
-
-GitHub Actions should run syntax checks, linting, unit tests, and import checks on every pull request. Deployment should happen only after those checks pass. Secrets stay in the hosting provider, not in Git.
+Do not add PostgreSQL, Redis, FastAPI, CDN or microservices unless a real requirement appears. SQLite remains the intended long-term database for this project's expected size.
