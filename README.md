@@ -17,11 +17,20 @@ Premium is only an internal plan flag for now; there is no payment system.
 
 ## Stack
 
-Python + python-telegram-bot 22.8 + SQLite + the OpenAI Responses API over standard Python HTTPS.
+Python + python-telegram-bot 22.8 + SQLite + direct HTTPS calls to Gemini and OpenAI.
 
-The runtime does **not** install the OpenAI Python SDK, so Termux does not need its larger dependency tree or Android-incompatible build steps.
+The runtime uses no OpenAI or Gemini SDK, keeping Termux installation small and avoiding unnecessary native build dependencies.
 
-No PostgreSQL, Redis, FastAPI, CDN, microservices, vector database or payment backend is required.
+## AI reliability
+
+Emily can use up to 6 API keys:
+
+- `GEMINI_API_KEY_1` ... `GEMINI_API_KEY_4`
+- `OPENAI_API_KEY_1` ... `OPENAI_API_KEY_2`
+
+Each request is assigned to the least-busy healthy key. If a key is rate-limited, times out, or hits a provider/network failure, it is cooled down and another key is tried. Authentication failures disable only that key. Multiple Telegram updates can be processed concurrently.
+
+Keys live only in environment variables; they are never stored in SQLite.
 
 ## Features
 
@@ -36,7 +45,7 @@ No PostgreSQL, Redis, FastAPI, CDN, microservices, vector database or payment ba
 - Failed AI generations are refunded
 - Telegram-only admin control center
 - User lookup, ban/unban, credits, plan flag, errors, CSV export and announcements
-- Automatic user migration from the old `alisa_bot.db` into `emily.db`
+- Automatic migration from old `alisa_bot.db` user records into `emily.db`
 - Lightweight GitHub CI checks
 
 ## Termux setup
@@ -49,28 +58,47 @@ git clone https://github.com/Rajatxdev/Emily.py.git
 cd Emily.py
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-
-export TELEGRAM_TOKEN="YOUR_TELEGRAM_BOT_TOKEN"
-export OPENAI_API_KEY="YOUR_OPENAI_API_KEY"
-export ADMIN_USER_ID="YOUR_NUMERIC_TELEGRAM_USER_ID"
-
-python emily_ai_bot.py
 ```
 
-Do not commit secrets.
+Create a local `.env` file from `.env.example` and fill in your own values. Do not commit `.env`.
+
+Start Emily with:
+
+```bash
+python run_emily.py
+```
+
+The official bot source remains `emily_ai_bot.py`; `run_emily.py` only wires the multi-key router and concurrent Telegram processing.
+
+## Configuration
+
+```text
+TELEGRAM_TOKEN=...
+ADMIN_USER_ID=...
+GEMINI_API_KEY_1=...
+GEMINI_API_KEY_2=...
+GEMINI_API_KEY_3=...
+GEMINI_API_KEY_4=...
+OPENAI_API_KEY_1=...
+OPENAI_API_KEY_2=...
+GEMINI_MODEL=gemini-3.8-flash
+OPENAI_MODEL=gpt-5-mini
+```
+
+Optional: `EMILY_AI_TIMEOUT`, `EMILY_KEY_COOLDOWN`, `EMILY_FREE_DAILY`, `EMILY_PREMIUM_DAILY`, `EMILY_HISTORY_MESSAGES`, `EMILY_MAX_MEMORIES`.
 
 ## Useful commands
 
 User: `/start`, `/help`, `/mode`, `/memory`, `/remember key = value`, `/forget key`, `/forget_all`, `/quota`, `/moment`, `/group_summary`, `/group_moments on|off`, `/privacy`, `/about`.
 
-Admin: `/admin`, `/stats`, `/user_info <id>`, `/ban_user <id>`, `/unban_user <id>`, `/add_credits <id> <amount>`, `/set_plan <id> free|premium`, `/errors`, `/export_data`, `/announce <message>`.
+Admin: `/admin`, `/stats`, `/user_info <id>`, `/ai_status`, `/ban_user <id>`, `/unban_user <id>`, `/add_credits <id> <amount>`, `/set_plan <id> free|premium`, `/errors`, `/export_data`, `/announce <message>`.
 
 ## Testing
 
 Development-only dependencies are in `requirements-dev.txt`.
 
 ```bash
-python -m py_compile emily_ai_bot.py
 python -m pip install -r requirements-dev.txt
+python -m py_compile emily_ai_bot.py ai_router.py run_emily.py
 pytest -q
 ```
