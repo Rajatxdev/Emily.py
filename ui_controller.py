@@ -73,7 +73,7 @@ def admin_clear_confirm_keyboard() -> InlineKeyboardMarkup:
 
 
 def admin_back(target="admin:home"):
-    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data=target)]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data=target)])
 
 
 def admin_ai_keyboard(router) -> InlineKeyboardMarkup:
