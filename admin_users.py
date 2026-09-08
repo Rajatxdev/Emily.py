@@ -29,19 +29,23 @@ def sync_user(update: Update, db_func) -> None:
         conn.commit()
 
 
-def user_directory(db_func, page: int = 0, per_page: int = 8) -> tuple[str, int]:
+def user_directory_rows(db_func, page: int = 0, per_page: int = 8):
     page = max(0, page)
     offset = page * per_page
     with closing(db_func()) as conn:
-        total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        total = int(conn.execute("SELECT COUNT(*) FROM users").fetchone()[0])
         rows = conn.execute(
-            "SELECT user_id, first_name, last_name, username, plan, credits, is_banned, total_messages FROM users ORDER BY user_id DESC LIMIT ? OFFSET ?",
+            "SELECT user_id, first_name, last_name, username, plan, credits, is_banned, total_messages FROM users ORDER BY last_interaction DESC, user_id DESC LIMIT ? OFFSET ?",
             (per_page, offset),
         ).fetchall()
+    return rows, total
 
+
+def user_directory(db_func, page: int = 0, per_page: int = 8) -> tuple[str, int]:
+    rows, total = user_directory_rows(db_func, page, per_page)
+    offset = max(0, page) * per_page
     if not rows:
         return "👥 <b>User Directory</b>\n\nNo users found on this page.", total
-
     lines = [f"👥 <b>User Directory</b>  ·  {total} total\n"]
     for i, row in enumerate(rows, offset + 1):
         full_name = " ".join(x for x in (row["first_name"], row["last_name"]) if x).strip() or "Name not recorded"
@@ -63,15 +67,14 @@ def find_user(db_func, query: str) -> str:
         return "🔎 Send a numeric Telegram ID or username after /find_user."
     with closing(db_func()) as conn:
         if query.isdigit():
-            row = conn.execute("SELECT user_id, first_name, last_name, username, plan, credits, is_banned FROM users WHERE user_id=?", (int(query),)).fetchone()
+            row = conn.execute("SELECT user_id FROM users WHERE user_id=?", (int(query),)).fetchone()
+            user_id = int(query) if row else None
         else:
-            row = conn.execute("SELECT user_id, first_name, last_name, username, plan, credits, is_banned FROM users WHERE lower(username)=?", (query,)).fetchone()
-    if not row:
+            row = conn.execute("SELECT user_id FROM users WHERE lower(username)=?", (query,)).fetchone()
+            user_id = int(row["user_id"]) if row else None
+    if user_id is None:
         return "🔎 <b>User not found</b>\n\nThe user must have interacted with Emily at least once so Emily has their profile record."
-    name = " ".join(x for x in (row["first_name"], row["last_name"]) if x).strip() or "Name not recorded"
-    username = f"@{row['username']}" if row["username"] else "No username"
-    status = "🚫 Banned" if row["is_banned"] else row["plan"].title()
-    return f"🔎 <b>User Found</b>\n\n👤 {name}\n🔗 {username}\n🆔 <code>{row['user_id']}</code>\n💳 {status}\n💰 Credits: {row['credits']}"
+    return f"🔎 <b>User Found</b>\n\nOpen the user profile for <code>{user_id}</code> from the User Directory, or use <code>/user_info {user_id}</code>."
 
 
 def my_id_text(update: Update) -> str:
