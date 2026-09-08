@@ -23,6 +23,7 @@ load_env_file()
 
 import emily_ai_bot as emily
 from ai_router import AIRouter
+from ui_controller import patch as patch_ui
 from telegram.ext import CommandHandler
 
 
@@ -36,7 +37,10 @@ if not os.getenv("OPENAI_API_KEY"):
 
 # Route every existing OpenAI call through the six-key provider pool.
 emily.openai_responses_create = router.generate_sync
-emily.VERSION = "3.1.0-multikey"
+emily.VERSION = "3.2.0-ui"
+
+# Replace the old text-only menus with the navigable Telegram UI.
+patch_ui(emily, router)
 
 _original_builder = emily.ApplicationBuilder
 
@@ -73,5 +77,4 @@ def main() -> None:
     app.run_polling(drop_pending_updates=True)
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
