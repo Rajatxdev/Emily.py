@@ -32,7 +32,13 @@ class ProviderKey:
     inflight: int = 0
     cooldown_until: float = 0.0
     disabled: bool = False
+    manual_disabled: bool = False
     failures: int = 0
+    requests: int = 0
+    successes: int = 0
+    total_failures: int = 0
+    last_error: str = ""
+    last_used: float = 0.0
 
     @property
     def label(self) -> str:
@@ -40,7 +46,7 @@ class ProviderKey:
 
 
 class AIRouter:
-    """Thread-safe AI pool. Balances requests and fails over across all configured keys."""
+    """Thread-safe AI pool with load balancing, failover and admin telemetry."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -84,24 +90,13 @@ class AIRouter:
                 usable.append(name.split("/", 1)[1])
         if not usable:
             raise AIProviderError("provider_error", f"{item.label}: no Gemini generateContent model is available")
-
-        # Do not rely on alphabetical sorting. Gemini model availability can include
-        # older models that are listed but unavailable to a newly created API key.
-        # Prefer current stable Flash models, then safe older stable fallbacks.
         preferred = [
-            "gemini-3.8-flash",
-            "gemini-3.7-flash",
-            "gemini-3.6-flash",
-            "gemini-3.5-flash",
-            "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite",
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
+            "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash",
+            "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-flash-lite",
         ]
         for candidate in preferred:
             if candidate in usable:
                 return candidate
-
         flash = [m for m in usable if "flash" in m.lower() and "image" not in m.lower()]
         return sorted(flash or usable)[0]
 
@@ -129,9 +124,8 @@ class AIRouter:
             if exc.code in {401, 403}:
                 raise AIProviderError("authentication", f"{item.label} model discovery HTTP {exc.code}: {details}") from exc
             if exc.code == 429:
-                if self._is_quota_exhausted(details):
-                    raise AIProviderError("quota_exhausted", f"{item.label} model discovery quota exhausted: {details}") from exc
-                raise AIProviderError("rate_limit", f"{item.label} model discovery HTTP 429: {details}") from exc
+                error_type = "quota_exhausted" if self._is_quota_exhausted(details) else "rate_limit"
+                raise AIProviderError(error_type, f"{item.label} model discovery HTTP 429: {details}") from exc
             raise AIProviderError("provider_error", f"{item.label} model discovery HTTP {exc.code}: {details}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise AIProviderError("network", f"{item.label} model discovery failed: {exc}") from exc
@@ -139,7 +133,13 @@ class AIRouter:
     def _pick(self, excluded: set[str]) -> Optional[ProviderKey]:
         now = time.monotonic()
         with self._lock:
-            candidates = [item for item in self.keys if item.label not in excluded and not item.disabled and item.cooldown_until <= now]
+            candidates = [
+                item for item in self.keys
+                if item.label not in excluded
+                and not item.disabled
+                and not item.manual_disabled
+                and item.cooldown_until <= now
+            ]
             if not candidates:
                 return None
             load = min(item.inflight for item in candidates)
@@ -147,17 +147,23 @@ class AIRouter:
             item = least_busy[self._cursor % len(least_busy)]
             self._cursor += 1
             item.inflight += 1
+            item.requests += 1
+            item.last_used = time.time()
             return item
 
     def _success(self, item: ProviderKey) -> None:
         with self._lock:
             item.inflight = max(0, item.inflight - 1)
             item.failures = 0
+            item.successes += 1
+            item.last_error = ""
 
-    def _failure(self, item: ProviderKey, error_type: str) -> None:
+    def _failure(self, item: ProviderKey, error_type: str, message: str) -> None:
         with self._lock:
             item.inflight = max(0, item.inflight - 1)
             item.failures += 1
+            item.total_failures += 1
+            item.last_error = f"{error_type}: {message}"[:300]
             if error_type in {"authentication", "quota_exhausted"}:
                 item.disabled = True
             else:
@@ -288,21 +294,50 @@ class AIRouter:
                 return result
             except AIProviderError as exc:
                 last_error = exc
-                self._failure(item, exc.error_type)
+                self._failure(item, exc.error_type, str(exc))
                 print(f"{item.label} failed: {exc.error_type}: {exc}")
         raise last_error or AIProviderError("provider_error", "All configured AI keys are unavailable")
+
+    def set_manual_disabled(self, label: str, disabled: bool) -> bool:
+        with self._lock:
+            for item in self.keys:
+                if item.label == label:
+                    item.manual_disabled = disabled
+                    if not disabled:
+                        item.cooldown_until = 0.0
+                        item.disabled = False
+                    return True
+        return False
+
+    def reset_runtime_stats(self) -> None:
+        with self._lock:
+            for item in self.keys:
+                item.requests = 0
+                item.successes = 0
+                item.total_failures = 0
+                item.failures = 0
+                item.last_error = ""
+                item.cooldown_until = 0.0
+                item.inflight = 0
 
     def status_text(self) -> str:
         now = time.monotonic()
         with self._lock:
-            lines = ["🤖 Emily AI pool", ""]
+            lines = ["🤖 <b>Emily AI Pool</b>", ""]
             for item in self.keys:
-                if item.disabled:
+                if item.manual_disabled:
+                    state = "manual OFF"
+                elif item.disabled:
                     state = "disabled"
                 elif item.cooldown_until > now:
                     state = f"cooldown {max(1, int(item.cooldown_until - now))}s"
                 else:
                     state = "ready"
                 model = item.model or "auto"
-                lines.append(f"• {item.label}: {state} | model={model} | in-flight={item.inflight} | failures={item.failures}")
+                lines.append(
+                    f"• <b>{item.label}</b> — {state}\n"
+                    f"  model={model} · req={item.requests} · ok={item.successes} · fail={item.total_failures} · in-flight={item.inflight}"
+                )
+                if item.last_error:
+                    lines.append(f"  last error: {item.last_error}")
             return "\n".join(lines)
