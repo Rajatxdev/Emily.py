@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from html import escape
 from typing import Optional
 
 AI_TIMEOUT = float(os.getenv("EMILY_AI_TIMEOUT", "30"))
@@ -335,9 +336,9 @@ class AIRouter:
                     state = "ready"
                 model = item.model or "auto"
                 lines.append(
-                    f"• <b>{item.label}</b> — {state}\n"
-                    f"  model={model} · req={item.requests} · ok={item.successes} · fail={item.total_failures} · in-flight={item.inflight}"
+                    f"• <b>{escape(item.label)}</b> — {escape(state)}\n"
+                    f"  model={escape(model)} · req={item.requests} · ok={item.successes} · fail={item.total_failures} · in-flight={item.inflight}"
                 )
                 if item.last_error:
-                    lines.append(f"  last error: {item.last_error}")
+                    lines.append(f"  last error: {escape(item.last_error)}")
             return "\n".join(lines)
