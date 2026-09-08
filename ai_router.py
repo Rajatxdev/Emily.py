@@ -74,7 +74,7 @@ class AIRouter:
     def _discover_gemini_model(self, item: ProviderKey) -> str:
         payload = self._get_json(GEMINI_MODELS_URL, {"x-goog-api-key": item.key})
         models = payload.get("models", []) or []
-        usable = []
+        usable: list[str] = []
         for model in models:
             if not isinstance(model, dict):
                 continue
@@ -84,8 +84,26 @@ class AIRouter:
                 usable.append(name.split("/", 1)[1])
         if not usable:
             raise AIProviderError("provider_error", f"{item.label}: no Gemini generateContent model is available")
-        preferred = [m for m in usable if "flash" in m.lower() and "image" not in m.lower()]
-        return sorted(preferred or usable)[0]
+
+        # Do not rely on alphabetical sorting. Gemini model availability can include
+        # older models that are listed but unavailable to a newly created API key.
+        # Prefer current stable Flash models, then safe older stable fallbacks.
+        preferred = [
+            "gemini-3.8-flash",
+            "gemini-3.7-flash",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+        ]
+        for candidate in preferred:
+            if candidate in usable:
+                return candidate
+
+        flash = [m for m in usable if "flash" in m.lower() and "image" not in m.lower()]
+        return sorted(flash or usable)[0]
 
     def _discover_openai_model(self, item: ProviderKey) -> str:
         payload = self._get_json(OPENAI_MODELS_URL, {"Authorization": f"Bearer {item.key}"})
