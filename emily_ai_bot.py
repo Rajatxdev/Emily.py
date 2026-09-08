@@ -1,1 +1,1 @@
-REPLACED
+print('This temporary state will be replaced immediately.')
