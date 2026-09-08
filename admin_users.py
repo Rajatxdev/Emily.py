@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 from contextlib import closing
 
 from telegram import Update
@@ -22,8 +21,10 @@ def sync_user(update: Update, db_func) -> None:
         return
     with closing(db_func()) as conn:
         conn.execute(
-            "UPDATE users SET username=?, first_name=?, last_name=?, last_interaction=COALESCE(last_interaction, CURRENT_TIMESTAMP) WHERE user_id=?",
-            (user.username, user.first_name, user.last_name, user.id),
+            "INSERT INTO users(user_id, username, first_name, last_name, quota_date, last_interaction) "
+            "VALUES(?,?,?,?,date('now'),CURRENT_TIMESTAMP) "
+            "ON CONFLICT(user_id) DO UPDATE SET username=excluded.username, first_name=excluded.first_name, last_name=excluded.last_name, last_interaction=excluded.last_interaction",
+            (user.id, user.username, user.first_name, user.last_name),
         )
         conn.commit()
 
