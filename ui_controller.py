@@ -3,6 +3,7 @@ from __future__ import annotations
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from admin_users import find_user, my_id_text, user_directory
+from admin_data import database_stats
 
 
 def user_home(emily) -> InlineKeyboardMarkup:
@@ -49,6 +50,22 @@ def admin_users_keyboard(page: int, total: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def admin_data_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Database Stats", callback_data="admin:db_stats")],
+        [InlineKeyboardButton("📤 Export Data", callback_data="admin:export")],
+        [InlineKeyboardButton("🗑️ Clear Entire Database", callback_data="admin:clear_db")],
+        [InlineKeyboardButton("⬅️ Admin Home", callback_data="admin:home")],
+    ])
+
+
+def admin_clear_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚠️ YES, DELETE EVERYTHING", callback_data="admin:clear_db_confirm")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="admin:data")],
+    ])
+
+
 def admin_back():
     return InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Admin Home", callback_data="admin:home")]])
 
@@ -56,48 +73,24 @@ def admin_back():
 def user_commands_text() -> str:
     return (
         "📖 <b>Emily Command Guide</b>\n\n"
-        "💬 <b>Chat</b>\n"
-        "Just message Emily in DM. In groups, mention her or reply to her.\n\n"
-        "🆔 <b>Account ID</b>\n"
-        "/myid — instantly show your Telegram user ID.\n\n"
-        "🎭 <b>Personality</b>\n"
-        "/mode — choose Bestie, Study, Roast, Calm, Coding or Hype.\n\n"
-        "🧠 <b>Memory</b>\n"
-        "/memory — see what Emily remembers.\n"
-        "/remember key = value — save something.\n"
-        "/forget key — delete one memory.\n"
-        "/forget_all — erase all saved memories.\n\n"
-        "💳 <b>Account</b>\n"
-        "/quota — see today's usage, plan and credits.\n"
-        "/privacy — see storage/privacy controls.\n"
-        "/about — version and product info.\n\n"
-        "✨ <b>Fun & Groups</b>\n"
-        "/moment — generate an Emily Moment.\n"
-        "/group_summary — recap recent group-visible conversation.\n"
-        "/group_moments on|off — group admins control Moments.\n\n"
-        "🆘 <b>Navigation</b>\n"
-        "/start — open this menu.\n"
-        "/help — quick command reference."
+        "💬 <b>Chat</b>\nJust message Emily in DM. In groups, mention her or reply to her.\n\n"
+        "🆔 <b>Account ID</b>\n/myid — instantly show your Telegram user ID.\n\n"
+        "🎭 <b>Personality</b>\n/mode — choose Bestie, Study, Roast, Calm, Coding or Hype.\n\n"
+        "🧠 <b>Memory</b>\n/memory — see what Emily remembers.\n/remember key = value — save something.\n/forget key — delete one memory.\n/forget_all — erase all saved memories.\n\n"
+        "💳 <b>Account</b>\n/quota — see today's usage, plan and credits.\n/privacy — see storage/privacy controls.\n/about — version and product info.\n\n"
+        "✨ <b>Fun & Groups</b>\n/moment — generate an Emily Moment.\n/group_summary — recap recent group-visible conversation.\n/group_moments on|off — group admins control Moments.\n\n"
+        "🆘 <b>Navigation</b>\n/start — open this menu.\n/help — quick command reference."
     )
 
 
 def admin_commands_text() -> str:
     return (
         "📖 <b>Admin Command Reference</b>\n\n"
-        "/admin — open Control Center.\n"
-        "/stats — bot usage dashboard.\n"
-        "/ai_status — live AI key/model health.\n"
-        "/users — paginated user directory with name, username and ID.\n"
-        "/find_user &lt;id|username&gt; — find a known user.\n"
-        "/user_info &lt;id&gt; — inspect a user.\n"
-        "/ban_user &lt;id&gt; — ban a user.\n"
-        "/unban_user &lt;id&gt; — restore a user.\n"
-        "/add_credits &lt;id&gt; &lt;amount&gt; — add credits.\n"
-        "/set_plan &lt;id&gt; free|premium — change plan.\n"
-        "/errors — recent recorded failures.\n"
-        "/export_data — export user data as CSV.\n"
-        "/announce &lt;message&gt; — broadcast to non-banned users.\n\n"
-        "Use the buttons for navigation; use commands when an operation needs text input."
+        "/admin — open Control Center.\n/stats — bot usage dashboard.\n/ai_status — live AI key/model health.\n"
+        "/users — paginated user directory with name, username and ID.\n/find_user &lt;id|username&gt; — find a known user.\n/user_info &lt;id&gt; — inspect a user.\n"
+        "/ban_user &lt;id&gt; — ban a user.\n/unban_user &lt;id&gt; — restore a user.\n/add_credits &lt;id&gt; &lt;amount&gt; — add credits.\n"
+        "/set_plan &lt;id&gt; free|premium — change plan.\n/errors — recent recorded failures.\n/export_data — export user data as CSV.\n"
+        "/announce &lt;message&gt; — broadcast to non-banned users.\n\nUse the buttons for navigation; use commands when an operation needs text input."
     )
 
 
@@ -111,9 +104,7 @@ def patch(emily, router):
             f"💗 <b>Hey, I'm Emily</b>  ·  v{emily.VERSION}\n\n"
             "Your AI companion + group assistant.\n"
             "Chat naturally, switch personalities, let me remember useful things, or use group tools.\n\n"
-            "🎁 Free: <b>50 AI replies/day</b>\n"
-            "💳 1 credit = <b>1 AI generation</b>\n"
-            "⭐ Premium: higher quota + special features"
+            "🎁 Free: <b>50 AI replies/day</b>\n💳 1 credit = <b>1 AI generation</b>\n⭐ Premium: higher quota + special features"
         )
         await msg.reply_text(text, parse_mode="HTML", reply_markup=user_home(emily))
 
@@ -130,6 +121,7 @@ def patch(emily, router):
         uid = query.from_user.id
         emily._ui_user_id = uid
         await query.answer()
+
         if data.startswith("mode:"):
             mode = data.split(":", 1)[1]
             if mode in emily.MODES:
@@ -138,10 +130,12 @@ def patch(emily, router):
                     conn.execute("UPDATE users SET mode=? WHERE user_id=?", (mode, uid)); conn.commit()
                 await query.message.edit_text(f"🎭 <b>Mode changed</b>\n\nEmily is now in <b>{mode.title()}</b> mode.", parse_mode="HTML", reply_markup=back("user:modes"))
             return
+
         if data.startswith("user:"):
             key = data.split(":", 1)[1]
             emily.ensure_user(uid, query.from_user.username)
-            if key == "home": await query.message.edit_text("💗 <b>Emily</b>\n\nChoose what you want to explore:", parse_mode="HTML", reply_markup=user_home(emily))
+            if key == "home":
+                await query.message.edit_text("💗 <b>Emily</b>\n\nChoose what you want to explore:", parse_mode="HTML", reply_markup=user_home(emily))
             elif key == "myid": await query.message.edit_text(my_id_text(update), parse_mode="HTML", reply_markup=back())
             elif key in {"help", "commands"}: await query.message.edit_text(user_commands_text(), parse_mode="HTML", reply_markup=back())
             elif key == "modes": await query.message.edit_text("🎭 <b>Choose Emily's personality</b>\n\nEach mode changes her tone and how she approaches your request.", parse_mode="HTML", reply_markup=emily.mode_keyboard())
@@ -152,8 +146,10 @@ def patch(emily, router):
             elif key == "moment": await query.message.edit_text("✨ <b>Emily Moment</b>\n\nUse /moment for a short creative prompt, challenge or fun community moment.", reply_markup=back())
             elif key == "about": await query.message.edit_text(f"ℹ️ <b>Emily v{emily.VERSION}</b>\n\nSQLite memory + quotas + credits + personality modes + group tools.\n\nAI providers are routed through the configured multi-key pool.", parse_mode="HTML", reply_markup=back())
             return
+
         if not emily.is_admin(uid):
             await query.answer("Not authorized.", show_alert=True); return
+
         if data == "admin:home": await query.message.edit_text("🛠 <b>Emily Control Center</b>\n\nEverything important is available below.", parse_mode="HTML", reply_markup=admin_home())
         elif data.startswith("admin:users"):
             parts = data.split(":")
@@ -169,8 +165,17 @@ def patch(emily, router):
         elif data == "admin:moderation": await query.message.edit_text("🚫 <b>Moderation</b>\n\n/ban_user &lt;id&gt; — block AI usage\n/unban_user &lt;id&gt; — restore access\n/user_info &lt;id&gt; — inspect account status", parse_mode="HTML", reply_markup=admin_back())
         elif data == "admin:broadcast": await query.message.edit_text("📢 <b>Broadcast</b>\n\nUse:\n/announce Your message here\n\nEmily sends it to non-banned users and reports sent/failed counts.", parse_mode="HTML", reply_markup=admin_back())
         elif data == "admin:emily": await query.message.edit_text("🧠 <b>Emily Controls</b>\n\n🎭 Six user personality modes\n✨ Emily Moments\n🧠 Long-term memory\n💬 Recent conversation context\n\nUser-facing controls are available from /start.", parse_mode="HTML", reply_markup=admin_back())
-        elif data == "admin:errors": await query.message.edit_text("⚠️ <b>Error Monitor</b>\n\nUse /errors to inspect recent recorded failures.\n\nThe button is kept safe for callback navigation instead of calling the old message-only handler.", parse_mode="HTML", reply_markup=admin_back())
-        elif data == "admin:data": await query.message.edit_text("📤 <b>Data</b>\n\n/export_data — download the current user table as CSV.\n\n/errors — inspect recent recorded failures.", parse_mode="HTML", reply_markup=admin_back())
+        elif data == "admin:errors": await query.message.edit_text("⚠️ <b>Error Monitor</b>\n\nUse /errors to inspect recent recorded failures.", parse_mode="HTML", reply_markup=admin_back())
+        elif data == "admin:data": await query.message.edit_text("📤 <b>Data & Maintenance</b>\n\nChoose a safe maintenance action below. Destructive actions require an explicit confirmation.", parse_mode="HTML", reply_markup=admin_data_keyboard())
+        elif data == "admin:db_stats": await query.message.edit_text(database_stats(emily.db), parse_mode="HTML", reply_markup=admin_data_keyboard())
+        elif data == "admin:export": await query.message.edit_text("📤 <b>Export Data</b>\n\nUse /export_data to generate the current user CSV export.", parse_mode="HTML", reply_markup=admin_data_keyboard())
+        elif data == "admin:clear_db":
+            stats = database_stats(emily.db)
+            await query.message.edit_text("⚠️ <b>Danger Zone</b>\n\nThis will permanently delete the current SQLite data for all users, memories, messages, roasts, group settings and recorded errors.\n\n<b>This cannot be undone.</b>\n\n" + stats, parse_mode="HTML", reply_markup=admin_clear_confirm_keyboard())
+        elif data == "admin:clear_db_confirm":
+            from admin_data import clear_database
+            result = clear_database(emily.db)
+            await query.message.edit_text(result, parse_mode="HTML", reply_markup=admin_home())
         elif data == "admin:health":
             health = await emily.admin_stats_message()
             await query.message.edit_text("🏥 <b>System Health</b>\n\n" + health + "\n\n🤖 AI pool: use the AI Pool button for per-key status.", parse_mode="HTML", reply_markup=admin_back())
