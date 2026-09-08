@@ -1,0 +1,3 @@
+python-telegram-bot[rate-limiter]>=22.8,<23
+openai>=1.0
+pydantic-settings>=2.0
