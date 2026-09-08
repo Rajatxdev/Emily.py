@@ -1,60 +1,31 @@
-# Emily v2 Implementation Checklist
+# Emily v2 Status
 
-## Stage 1 — Stability
+## Implemented
 
-- [x] Atomic daily quota reset
-- [x] Free = 50 AI replies/day
-- [x] Credit = 1 AI generation
-- [x] Failed AI generation refunds allowance
-- [x] Secure required environment variables
-- [x] Telegram rate limiter
-- [x] Callback handling fixed
-- [x] Central error classification + logging
-
-## Stage 2 — Memory
-
-- [x] Recent conversation history
-- [x] Persistent user memory
-- [x] Automatic capture of common facts
-- [x] `/memory`
-- [x] `/remember`
-- [x] `/forget`
-- [x] `/forget_all`
-
-## Stage 3 — Personality
-
-- [x] Bestie
-- [x] Study
-- [x] Roast
-- [x] Calm
-- [x] Coding
-- [x] Hype
-
-## Stage 4 — Group intelligence
-
-- [x] Mention/reply-to-Emily behavior
-- [x] Group-visible history
-- [x] `/group_summary`
-- [x] `/group_moments on|off`
-
-## Stage 5 — Emily Moments
-
-- [x] `/moment`
-- [x] AI-generated tiny prompts/challenges
-
-## Stage 6 — Operations
-
+- [x] Free: 50 AI replies/day
+- [x] Credits: 1 credit = 1 AI generation
+- [x] Premium later: higher quota + special features (plan flag only)
+- [x] Atomic quota handling and daily reset
+- [x] Failed AI generation refund
+- [x] SQLite persistence
+- [x] Recent conversation memory
+- [x] Long-term user memory with inspect/delete controls
+- [x] Automatic simple memory capture
+- [x] Bestie / Study / Roast / Calm / Coding / Hype modes
+- [x] Group mention/reply behavior
+- [x] Group-visible summary
+- [x] Emily Moments
 - [x] In-bot admin panel
-- [x] Stats
-- [x] User lookup
-- [x] Ban/unban
-- [x] Credits
-- [x] Free/premium plan flag
-- [x] Error viewer
-- [x] CSV export
-- [x] Announcements
+- [x] User lookup, ban/unban, credits, plan flag
+- [x] Error classification and `/errors`
+- [x] CSV export and announcements
+- [x] Legacy user migration from `alisa_bot.db`
 - [x] Lightweight GitHub CI
 
-## Deliberately not included
+## Intentionally kept out
 
 PostgreSQL, Redis, FastAPI, CDN, microservices, vector database and payment infrastructure.
+
+## Next stage after real Termux run
+
+Live integration testing with the actual Telegram bot and OpenAI key, followed by fixing any environment-specific issues discovered during runtime.
