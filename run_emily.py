@@ -46,7 +46,15 @@ def fast_builder():
         _original_builder()
         .concurrent_updates(32)
         .connection_pool_size(64)
-        .pool_timeout(10.0)
+        .pool_timeout(20.0)
+        .connect_timeout(20.0)
+        .read_timeout(30.0)
+        .write_timeout(30.0)
+        .get_updates_pool_timeout(20.0)
+        .get_updates_connect_timeout(20.0)
+        .get_updates_read_timeout(30.0)
+        .get_updates_write_timeout(30.0)
+        .http_version("1.1")
     )
 
 
