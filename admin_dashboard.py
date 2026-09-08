@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import closing
+from html import escape
 
 
 def _count(conn, table: str) -> int:
@@ -24,7 +25,7 @@ def dashboard_text(db_func, router) -> str:
     total_requests = sum(getattr(item, "requests", 0) for item in router.keys)
     total_successes = sum(getattr(item, "successes", 0) for item in router.keys)
     total_failures = sum(getattr(item, "total_failures", 0) for item in router.keys)
-    healthy = sum(1 for item in router.keys if not item.disabled and getattr(item, "manual_disabled", False) is False)
+    healthy = sum(1 for item in router.keys if not item.disabled and not getattr(item, "manual_disabled", False))
 
     return (
         "📊 <b>Emily Live Dashboard</b>\n\n"
@@ -44,37 +45,33 @@ def dashboard_text(db_func, router) -> str:
 
 def user_profile(db_func, user_id: int) -> str | None:
     with closing(db_func()) as conn:
-        user = conn.execute(
-            "SELECT * FROM users WHERE user_id=?", (user_id,)
-        ).fetchone()
+        user = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
         if user is None:
             return None
         messages = int(conn.execute("SELECT COUNT(*) FROM messages WHERE user_id=?", (user_id,)).fetchone()[0])
         memories = int(conn.execute("SELECT COUNT(*) FROM memories WHERE user_id=?", (user_id,)).fetchone()[0])
         roasts = int(conn.execute("SELECT COUNT(*) FROM roasts WHERE user_id=?", (user_id,)).fetchone()[0])
         chats = int(conn.execute("SELECT COUNT(DISTINCT chat_id) FROM messages WHERE user_id=?", (user_id,)).fetchone()[0])
-        last_message = conn.execute(
-            "SELECT created_at FROM messages WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,)
-        ).fetchone()
+        last_message = conn.execute("SELECT created_at FROM messages WHERE user_id=? ORDER BY id DESC LIMIT 1", (user_id,)).fetchone()
 
     name = " ".join(x for x in (user["first_name"], user["last_name"]) if x).strip() or "Name not recorded"
     username = f"@{user['username']}" if user["username"] else "No username"
     status = "🚫 Banned" if user["is_banned"] else "✅ Active"
     return (
         "👤 <b>User Profile</b>\n\n"
-        f"<b>{name}</b>\n"
-        f"🔗 {username}\n"
+        f"<b>{escape(name)}</b>\n"
+        f"🔗 {escape(username)}\n"
         f"🆔 <code>{user_id}</code>\n"
         f"🟢 Status: <b>{status}</b>\n"
-        f"💳 Plan: <b>{user['plan'].title()}</b>\n"
+        f"💳 Plan: <b>{escape(user['plan'].title())}</b>\n"
         f"💰 Credits: <b>{user['credits']}</b>\n"
-        f"🎭 Mode: <b>{user['mode'].title()}</b>\n"
+        f"🎭 Mode: <b>{escape(user['mode'].title())}</b>\n"
         f"📅 Today: <b>{user['daily_messages']}</b>\n"
         f"💬 Total replies: <b>{user['total_messages']}</b>\n"
         f"🗂 Stored messages: <b>{messages}</b>\n"
         f"🧠 Memories: <b>{memories}</b>\n"
         f"🔥 Roasts: <b>{roasts}</b>\n"
         f"👥 Chats: <b>{chats}</b>\n"
-        f"🕒 Last interaction: {user['last_interaction'] or 'Unknown'}\n"
-        f"💬 Last stored message: {last_message['created_at'] if last_message else 'None'}"
+        f"🕒 Last interaction: {escape(str(user['last_interaction'] or 'Unknown'))}\n"
+        f"💬 Last stored message: {escape(str(last_message['created_at'] if last_message else 'None'))}"
     )
