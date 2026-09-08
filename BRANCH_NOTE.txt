@@ -1,1 +1,1 @@
-Temporary branch point for production foundation work.
+Emily v2 work is now documented in ARCHITECTURE_PLAN.md and PRODUCTION_CHECKLIST.md.

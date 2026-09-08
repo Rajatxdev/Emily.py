@@ -1,48 +1,31 @@
-# Emily Production Checklist
+# Emily v2 Status
 
-## Stage 0 — Safety and correctness
-- [ ] Secrets only through environment variables.
-- [ ] Atomic quota/credit accounting.
-- [ ] Correct callback-query handling.
-- [ ] UTC timestamps stored consistently.
-- [ ] External AI calls have timeout/retry policy.
-- [ ] No raw prompts/responses in default logs.
-- [ ] Telegram group trigger behavior is intentional.
+## Implemented
 
-## Stage 1 — Core quality
-- [ ] Modular bot/service/data/AI boundaries.
-- [ ] Conversation history with bounded context.
-- [ ] User-controlled memory.
-- [ ] Per-user mode and per-group settings.
-- [ ] Model and token/cost telemetry.
-- [ ] Graceful AI failure response.
-- [ ] Admin audit log.
+- [x] Free: 50 AI replies/day
+- [x] Credits: 1 credit = 1 AI generation
+- [x] Premium later: higher quota + special features (plan flag only)
+- [x] Atomic quota handling and daily reset
+- [x] Failed AI generation refund
+- [x] SQLite persistence
+- [x] Recent conversation memory
+- [x] Long-term user memory with inspect/delete controls
+- [x] Automatic simple memory capture
+- [x] Bestie / Study / Roast / Calm / Coding / Hype modes
+- [x] Group mention/reply behavior
+- [x] Group-visible summary
+- [x] Emily Moments
+- [x] In-bot admin panel
+- [x] User lookup, ban/unban, credits, plan flag
+- [x] Error classification and `/errors`
+- [x] CSV export and announcements
+- [x] Legacy user migration from `alisa_bot.db`
+- [x] Lightweight GitHub CI
 
-## Stage 2 — Product differentiation
-- [ ] Emily Modes.
-- [ ] Memory Cards.
-- [ ] Group chemistry / lightweight games.
-- [ ] Study mode and smart utilities.
-- [ ] Voice messages.
-- [ ] Image understanding.
-- [ ] Scheduled Emily Moments.
+## Intentionally kept out
 
-## Stage 3 — Production backend
-- [ ] Migrate SQLite to managed PostgreSQL.
-- [ ] Add Alembic migrations.
-- [ ] Add Redis only when distributed rate limiting/cache is needed.
-- [ ] Optional FastAPI admin/API surface.
-- [ ] Backup and restore test.
+PostgreSQL, Redis, FastAPI, CDN, microservices, vector database and payment infrastructure.
 
-## Stage 4 — Operations
-- [ ] GitHub Actions: Ruff + pytest + import/syntax checks.
-- [ ] Sentry or equivalent error tracking.
-- [ ] Health checks and uptime monitoring.
-- [ ] Deployment with rollback.
-- [ ] Cost and usage alerts.
+## Next stage after real Termux run
 
-## Stage 5 — Scale only if needed
-- [ ] Queue worker for broadcasts/scheduled jobs.
-- [ ] Multiple bot instances.
-- [ ] Redis distributed coordination.
-- [ ] CDN/object storage for media-heavy Mini App features.
+Live integration testing with the actual Telegram bot and OpenAI key, followed by fixing any environment-specific issues discovered during runtime.
