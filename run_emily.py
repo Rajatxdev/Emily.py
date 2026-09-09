@@ -33,25 +33,21 @@ from telegram.ext import CommandHandler, TypeHandler
 router = AIRouter()
 
 # The legacy core still checks OPENAI_API_KEY during build_app(). The router owns
-# provider selection now, so a Gemini-only installation must not fail startup.
+# provider selection now, so Gemini-only installations must not fail startup.
 if not os.getenv("OPENAI_API_KEY"):
     first_openai = os.getenv("OPENAI_API_KEY_1", "").strip()
     os.environ["OPENAI_API_KEY"] = first_openai or "router-managed"
 
 
 def generate_via_router(instructions, messages):
-    # Keep the actual bot identity consistent even while the legacy core file
-    # remains named emily_ai_bot.py for compatibility.
     return router.generate_sync(instructions.replace("Emily", "Alisa"), messages)
 
 
 emily.openai_responses_create = generate_via_router
-emily.VERSION = "3.6.0-performance-safety"
+emily.VERSION = "3.7.0-performance-safety"
 emily.init_db()
 migrate_profile_columns(emily.db)
-ui_original_user_keyboard = ui.admin_user_keyboard
-patch_ui = ui.patch
-patch_ui(emily, router)
+ui.patch(emily, router)
 
 _original_builder = emily.ApplicationBuilder
 
@@ -106,7 +102,7 @@ async def _tell_banned(update, _context) -> bool:
     message = getattr(update, "effective_message", None)
     if not user or not message:
         return False
-    if _is_banned(user.id):
+    if await asyncio.to_thread(_is_banned, user.id):
         try:
             await message.reply_text(_BAN_NOTICE, parse_mode="HTML")
         except Exception:
@@ -126,13 +122,13 @@ async def _notify_access_change(bot, user_id: int, enabled: bool) -> tuple[bool,
             await bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
             return True, "user notified after rate-limit delay"
         except Exception as retry_exc:
-            emily.log_error("telegram_send", "access_change", user_id, None, repr(retry_exc))
+            await asyncio.to_thread(emily.log_error, "telegram_send", "access_change", user_id, None, repr(retry_exc))
             return False, "notification failed after retry"
     except (Forbidden, BadRequest) as exc:
-        emily.log_error("telegram_send", "access_change", user_id, None, repr(exc))
+        await asyncio.to_thread(emily.log_error, "telegram_send", "access_change", user_id, None, repr(exc))
         return False, "Telegram could not deliver the notification"
     except Exception as exc:
-        emily.log_error("telegram_send", "access_change", user_id, None, repr(exc))
+        await asyncio.to_thread(emily.log_error, "telegram_send", "access_change", user_id, None, repr(exc))
         return False, "notification failed"
 
 
@@ -154,10 +150,8 @@ async def moderated_ban(update, context):
         return
 
     reason = " ".join(context.args[1:]).strip()
-    with emily.closing(emily.db()) as conn:
-        result = conn.execute("UPDATE users SET is_banned=1 WHERE user_id=?", (target,))
-        conn.commit()
-    if result.rowcount != 1:
+    changed = await asyncio.to_thread(_set_ban_db, target, 1)
+    if not changed:
         await message.reply_text("❌ User not found. The user must have a profile in Alisa first.")
         return
 
@@ -183,10 +177,8 @@ async def moderated_unban(update, context):
         await message.reply_text("❌ User ID must be numeric.")
         return
 
-    with emily.closing(emily.db()) as conn:
-        result = conn.execute("UPDATE users SET is_banned=0 WHERE user_id=?", (target,))
-        conn.commit()
-    if result.rowcount != 1:
+    changed = await asyncio.to_thread(_set_ban_db, target, 0)
+    if not changed:
         await message.reply_text("❌ User not found.")
         return
 
@@ -195,6 +187,13 @@ async def moderated_unban(update, context):
         f"✅ <b>User unbanned</b>\n\n🆔 <code>{target}</code>\n📨 {note}",
         parse_mode="HTML",
     )
+
+
+def _set_ban_db(user_id: int, state: int) -> bool:
+    with emily.closing(emily.db()) as conn:
+        result = conn.execute("UPDATE users SET is_banned=? WHERE user_id=?", (state, user_id))
+        conn.commit()
+    return result.rowcount == 1
 
 
 async def guarded_command(original, update, context):
@@ -227,7 +226,6 @@ emily.admin_unban = moderated_unban
 # ---------- Faster data preparation / persistence ----------
 
 def _prepare_user_state(user, message_text: str) -> None:
-    """Update profile + extract explicit memories in one SQLite transaction."""
     memories = emily.extract_simple_memories(message_text)
     with emily.closing(emily.db()) as conn:
         conn.execute(
@@ -276,7 +274,7 @@ async def fast_handle_message(update: Update, context) -> None:
     if not message or not user or not chat or not message.text:
         return
 
-    if _is_banned(user.id):
+    if await asyncio.to_thread(_is_banned, user.id):
         await message.reply_text(_BAN_NOTICE, parse_mode="HTML")
         return
 
@@ -286,15 +284,15 @@ async def fast_handle_message(update: Update, context) -> None:
     try:
         await asyncio.to_thread(_prepare_user_state, user, message.text)
     except Exception as exc:
-        emily.log_error("database", "prepare_user_state", user.id, chat.id, repr(exc))
+        await asyncio.to_thread(emily.log_error, "database", "prepare_user_state", user.id, chat.id, repr(exc))
 
-    kind = emily.consume_generation(user.id)
+    kind = await asyncio.to_thread(emily.consume_generation, user.id)
     if not kind:
-        if _is_banned(user.id):
+        if await asyncio.to_thread(_is_banned, user.id):
             await message.reply_text(_BAN_NOTICE, parse_mode="HTML")
             return
         try:
-            quota = emily.quota_text(user.id)
+            quota = await asyncio.to_thread(emily.quota_text, user.id)
         except Exception:
             quota = "Your usage information is temporarily unavailable."
         await message.reply_text(
@@ -305,18 +303,23 @@ async def fast_handle_message(update: Update, context) -> None:
         )
         return
 
-    row = emily.get_user(user.id)
+    row = await asyncio.to_thread(emily.get_user, user.id)
     purpose = "playful roast" if row["mode"] == "roast" or any(k in message.text.lower() for k in emily.RUDE_KEYWORDS) else "normal chat"
 
     try:
-        # No typing action here: it is an additional Telegram network round-trip.
+        # No typing action: it is an extra Telegram round-trip on every message.
         reply = await emily.ask_ai(user.id, chat.id, message.text, row["mode"], purpose)
-        await asyncio.to_thread(_persist_exchange, user, chat, message.text, reply, purpose)
-        await message.reply_text(reply)
+        persist = asyncio.create_task(asyncio.to_thread(_persist_exchange, user, chat, message.text, reply, purpose))
+        send = asyncio.create_task(message.reply_text(reply))
+        sent_result, persisted_result = await asyncio.gather(send, persist, return_exceptions=True)
+        if isinstance(persisted_result, Exception):
+            await asyncio.to_thread(emily.log_error, "database", "persist_exchange", user.id, chat.id, repr(persisted_result))
+        if isinstance(sent_result, Exception):
+            raise sent_result
     except Exception as exc:
-        emily.refund_generation(user.id, kind)
+        await asyncio.to_thread(emily.refund_generation, user.id, kind)
         error_type = emily.classify_ai_error(exc)
-        emily.log_error(error_type, "chat", user.id, chat.id, repr(exc))
+        await asyncio.to_thread(emily.log_error, error_type, "chat", user.id, chat.id, repr(exc))
         emily.logger.exception("AI request failed")
         await message.reply_text(emily.user_error_message(error_type).replace("Emily", "Alisa"))
 
@@ -341,10 +344,9 @@ async def profile_sync(update: Update, context) -> None:
         emily.logger.exception("Profile sync failed")
 
 
-# ---------- Admin user action buttons ----------
+# ---------- Real admin moderation buttons ----------
 
-# The existing UI showed moderation as a command-help screen. Replace those
-# buttons at runtime with real admin-only actions and confirmations.
+
 def admin_user_keyboard(user_id: int):
     try:
         banned = bool(emily.get_user(user_id)["is_banned"])
@@ -373,8 +375,6 @@ async def admin_callback(update, context):
     uid = query.from_user.id if query and query.from_user else None
     if not query or not query.message or not uid:
         return
-    if not emily.is_admin(uid):
-        return await _original_callback(update, context)
 
     if data.startswith("admin:ban_confirm:") or data.startswith("admin:unban_confirm:"):
         parts = data.split(":")
@@ -384,32 +384,30 @@ async def admin_callback(update, context):
             await query.answer("Invalid user.", show_alert=True)
             return
         target_id = int(target)
-        banned = bool(emily.get_user(target_id)["is_banned"]) if target_id else False
+        try:
+            banned = bool((await asyncio.to_thread(emily.get_user, target_id))["is_banned"])
+        except Exception:
+            await query.answer("User not found.", show_alert=True)
+            return
         if action == "ban_confirm":
             if banned:
                 await query.answer("User is already banned.", show_alert=True)
                 return
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⚠️ Confirm Ban", callback_data=f"admin:ban_apply:{target_id}"), InlineKeyboardButton("Cancel", callback_data=f"admin:user:{target_id}")],
-            ])
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⚠️ Confirm Ban", callback_data=f"admin:ban_apply:{target_id}"), InlineKeyboardButton("Cancel", callback_data=f"admin:user:{target_id}")]])
             await query.answer()
             await query.message.edit_text(
                 f"⚠️ <b>Confirm user ban</b>\n\n🆔 <code>{target_id}</code>\n\nThis immediately blocks Alisa AI access for this user.",
-                parse_mode="HTML",
-                reply_markup=keyboard,
+                parse_mode="HTML", reply_markup=keyboard,
             )
             return
         if not banned:
             await query.answer("User is already unbanned.", show_alert=True)
             return
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Confirm Unban", callback_data=f"admin:unban_apply:{target_id}"), InlineKeyboardButton("Cancel", callback_data=f"admin:user:{target_id}")],
-        ])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Confirm Unban", callback_data=f"admin:unban_apply:{target_id}"), InlineKeyboardButton("Cancel", callback_data=f"admin:user:{target_id}")]])
         await query.answer()
         await query.message.edit_text(
             f"✅ <b>Confirm user unban</b>\n\n🆔 <code>{target_id}</code>\n\nThis restores normal Alisa access.",
-            parse_mode="HTML",
-            reply_markup=keyboard,
+            parse_mode="HTML", reply_markup=keyboard,
         )
         return
 
@@ -425,18 +423,15 @@ async def admin_callback(update, context):
             await query.answer("You cannot ban the administrator account.", show_alert=True)
             return
         state = 1 if action == "ban_apply" else 0
-        with emily.closing(emily.db()) as conn:
-            result = conn.execute("UPDATE users SET is_banned=? WHERE user_id=?", (state, target_id))
-            conn.commit()
-        if result.rowcount != 1:
+        changed = await asyncio.to_thread(_set_ban_db, target_id, state)
+        if not changed:
             await query.answer("User not found.", show_alert=True)
             return
         _notified, note = await _notify_access_change(context.bot, target_id, not state)
         await query.answer("Updated")
         await query.message.edit_text(
             (f"🚫 <b>User banned</b>\n\n🆔 <code>{target_id}</code>\n📨 {note}" if state else f"✅ <b>User unbanned</b>\n\n🆔 <code>{target_id}</code>\n📨 {note}"),
-            parse_mode="HTML",
-            reply_markup=admin_user_keyboard(target_id),
+            parse_mode="HTML", reply_markup=admin_user_keyboard(target_id),
         )
         return
 
@@ -471,6 +466,7 @@ async def users_command(update, context) -> None:
     if not user or not emily.is_admin(user.id) or not update.effective_message:
         return
     from admin_users import user_directory_rows
+    from ui_controller import admin_users_keyboard
     rows, total = user_directory_rows(emily.db, 0)
     lines = [f"👥 <b>User Directory</b> · {total} total", ""]
     for row in rows:
@@ -478,12 +474,11 @@ async def users_command(update, context) -> None:
         username = f"@{row['username']}" if row["username"] else "No username"
         status = "🚫 BANNED" if row["is_banned"] else row["plan"].title()
         lines.append(f"<b>{name}</b> · {username}\n🆔 <code>{row['user_id']}</code> · 💰 {row['credits']} credits · {status}")
-    await update.effective_message.reply_text("\n\n".join(lines), parse_mode="HTML", reply_markup=admin_user_keyboard(rows[0]["user_id"]) if False and rows else None)
-    # Keep the established directory navigation generated by ui_controller.
-    if rows:
-        from ui_controller import admin_users_keyboard
-        await update.effective_message.delete()
-        await update.effective_message.reply_text("\n\n".join(lines), parse_mode="HTML", reply_markup=admin_users_keyboard(0, total, rows))
+    await update.effective_message.reply_text(
+        "\n\n".join(lines),
+        parse_mode="HTML",
+        reply_markup=admin_users_keyboard(0, total, rows),
+    )
 
 
 # ---------- Faster broadcast ----------
@@ -511,15 +506,15 @@ async def fast_announce(update, context) -> None:
                     return True
                 except RetryAfter as exc:
                     if attempt == 2:
-                        emily.log_error("telegram_send", "announce", user_id, None, repr(exc))
+                        await asyncio.to_thread(emily.log_error, "telegram_send", "announce", user_id, None, repr(exc))
                         return False
                     await asyncio.sleep(float(exc.retry_after) + 0.15)
                 except (Forbidden, BadRequest) as exc:
-                    emily.log_error("telegram_send", "announce", user_id, None, repr(exc))
+                    await asyncio.to_thread(emily.log_error, "telegram_send", "announce", user_id, None, repr(exc))
                     return False
                 except Exception as exc:
                     if attempt == 2:
-                        emily.log_error("telegram_send", "announce", user_id, None, repr(exc))
+                        await asyncio.to_thread(emily.log_error, "telegram_send", "announce", user_id, None, repr(exc))
                         return False
                     await asyncio.sleep(0.5 * (attempt + 1))
         return False
