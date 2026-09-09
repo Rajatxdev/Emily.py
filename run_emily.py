@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import time
 from threading import Lock
 
 
@@ -24,32 +23,34 @@ def load_env_file(path=".env"):
 load_env_file()
 
 import emily_ai_bot as emily
+import ui_controller as ui
 from admin_users import find_user, migrate_profile_columns, my_id_text, sync_user
 from ai_router import AIRouter
-from ui_controller import patch as patch_ui
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest, Forbidden, RetryAfter
 from telegram.ext import CommandHandler, TypeHandler
 
 router = AIRouter()
 
-# The legacy core still checks OPENAI_API_KEY during build_app(). The router now
-# owns provider selection, so make that legacy check harmless when Gemini-only
-# deployments are used.
+# The legacy core still checks OPENAI_API_KEY during build_app(). The router owns
+# provider selection now, so a Gemini-only installation must not fail startup.
 if not os.getenv("OPENAI_API_KEY"):
     first_openai = os.getenv("OPENAI_API_KEY_1", "").strip()
     os.environ["OPENAI_API_KEY"] = first_openai or "router-managed"
 
-# Keep the existing core filename and API, but route every generation through
-# the multi-key pool. Also make the bot's actual AI identity consistent.
+
 def generate_via_router(instructions, messages):
+    # Keep the actual bot identity consistent even while the legacy core file
+    # remains named emily_ai_bot.py for compatibility.
     return router.generate_sync(instructions.replace("Emily", "Alisa"), messages)
 
 
 emily.openai_responses_create = generate_via_router
-emily.VERSION = "3.5.0-performance-safety"
+emily.VERSION = "3.6.0-performance-safety"
 emily.init_db()
 migrate_profile_columns(emily.db)
+ui_original_user_keyboard = ui.admin_user_keyboard
+patch_ui = ui.patch
 patch_ui(emily, router)
 
 _original_builder = emily.ApplicationBuilder
@@ -115,28 +116,21 @@ async def _tell_banned(update, _context) -> bool:
 
 
 async def _notify_access_change(bot, user_id: int, enabled: bool) -> tuple[bool, str]:
+    text = _UNBAN_NOTICE if enabled else _BAN_NOTICE
     try:
-        await bot.send_message(
-            chat_id=user_id,
-            text=_UNBAN_NOTICE if enabled else _BAN_NOTICE,
-            parse_mode="HTML",
-        )
-        return True, "notified"
+        await bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
+        return True, "user notified"
     except RetryAfter as exc:
         try:
             await asyncio.sleep(float(exc.retry_after) + 0.15)
-            await bot.send_message(
-                chat_id=user_id,
-                text=_UNBAN_NOTICE if enabled else _BAN_NOTICE,
-                parse_mode="HTML",
-            )
-            return True, "notified after rate-limit delay"
+            await bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
+            return True, "user notified after rate-limit delay"
         except Exception as retry_exc:
             emily.log_error("telegram_send", "access_change", user_id, None, repr(retry_exc))
             return False, "notification failed after retry"
     except (Forbidden, BadRequest) as exc:
         emily.log_error("telegram_send", "access_change", user_id, None, repr(exc))
-        return False, "user could not be contacted in Telegram"
+        return False, "Telegram could not deliver the notification"
     except Exception as exc:
         emily.log_error("telegram_send", "access_change", user_id, None, repr(exc))
         return False, "notification failed"
@@ -167,8 +161,8 @@ async def moderated_ban(update, context):
         await message.reply_text("❌ User not found. The user must have a profile in Alisa first.")
         return
 
-    notified, note = await _notify_access_change(context.bot, target, False)
-    suffix = f"\nReason: {reason}" if reason else ""
+    _notified, note = await _notify_access_change(context.bot, target, False)
+    suffix = f"\n📝 Reason: {reason}" if reason else ""
     await message.reply_text(
         f"🚫 <b>User banned</b>\n\n🆔 <code>{target}</code>{suffix}\n📨 {note}",
         parse_mode="HTML",
@@ -196,7 +190,7 @@ async def moderated_unban(update, context):
         await message.reply_text("❌ User not found.")
         return
 
-    notified, note = await _notify_access_change(context.bot, target, True)
+    _notified, note = await _notify_access_change(context.bot, target, True)
     await message.reply_text(
         f"✅ <b>User unbanned</b>\n\n🆔 <code>{target}</code>\n📨 {note}",
         parse_mode="HTML",
@@ -209,7 +203,6 @@ async def guarded_command(original, update, context):
     return await original(update, context)
 
 
-# Commands that should never silently do nothing for a banned user.
 for _name in (
     "set_mode",
     "memory_command",
@@ -231,6 +224,49 @@ emily.admin_ban = moderated_ban
 emily.admin_unban = moderated_unban
 
 
+# ---------- Faster data preparation / persistence ----------
+
+def _prepare_user_state(user, message_text: str) -> None:
+    """Update profile + extract explicit memories in one SQLite transaction."""
+    memories = emily.extract_simple_memories(message_text)
+    with emily.closing(emily.db()) as conn:
+        conn.execute(
+            "INSERT INTO users(user_id, username, first_name, last_name, quota_date, last_interaction) "
+            "VALUES(?,?,?,?,date('now'),CURRENT_TIMESTAMP) "
+            "ON CONFLICT(user_id) DO UPDATE SET username=excluded.username, first_name=excluded.first_name, last_name=excluded.last_name, last_interaction=excluded.last_interaction",
+            (user.id, user.username, user.first_name, user.last_name),
+        )
+        for key, value in memories:
+            clean_key = emily.re.sub(r"[^a-zA-Z0-9_ -]", "", key).strip().lower()[:40]
+            clean_value = value.strip()[:300]
+            if clean_key and clean_value:
+                conn.execute(
+                    "INSERT INTO memories(user_id, memory_key, memory_value, updated_at) VALUES(?,?,?,?) "
+                    "ON CONFLICT(user_id, memory_key) DO UPDATE SET memory_value=excluded.memory_value, updated_at=excluded.updated_at",
+                    (user.id, clean_key, clean_value, emily.now_iso()),
+                )
+        conn.commit()
+
+
+def _persist_exchange(user, chat, user_message: str, reply: str, purpose: str) -> None:
+    with emily.closing(emily.db()) as conn:
+        conn.execute(
+            "INSERT INTO messages(user_id, chat_id, role, content, created_at) VALUES(?,?,?,?,?)",
+            (user.id, chat.id, "user", user_message[:4000], emily.now_iso()),
+        )
+        conn.execute(
+            "INSERT INTO messages(user_id, chat_id, role, content, created_at) VALUES(?,?,?,?,?)",
+            (user.id, chat.id, "assistant", reply[:4000], emily.now_iso()),
+        )
+        if purpose == "playful roast":
+            conn.execute(
+                "INSERT INTO roasts(user_id,user_message,roast_response,timestamp) VALUES(?,?,?,?)",
+                (user.id, user_message[:4000], reply[:4000], emily.now_iso()),
+            )
+            conn.execute("UPDATE users SET roasts_count=roasts_count+1 WHERE user_id=?", (user.id,))
+        conn.commit()
+
+
 # ---------- Faster / safer message path ----------
 
 async def fast_handle_message(update: Update, context) -> None:
@@ -240,27 +276,17 @@ async def fast_handle_message(update: Update, context) -> None:
     if not message or not user or not chat or not message.text:
         return
 
-    # Keep this first so banned users are never silently ignored.
     if _is_banned(user.id):
         await message.reply_text(_BAN_NOTICE, parse_mode="HTML")
         return
 
-    # Group privacy: only answer targeted messages.
     if chat.type in {"group", "supergroup"} and not emily.group_targeted(update, context):
         return
 
-    # Keep profile data current without putting a blocking Telegram/DB action
-    # in the response path. Core quota accounting remains transactional.
     try:
-        emily.ensure_user(user.id, user.username)
+        await asyncio.to_thread(_prepare_user_state, user, message.text)
     except Exception as exc:
-        emily.log_error("database", "ensure_user", user.id, chat.id, repr(exc))
-
-    for key, value in emily.extract_simple_memories(message.text):
-        try:
-            emily.save_memory(user.id, key, value)
-        except Exception as exc:
-            emily.log_error("database", "memory_extract", user.id, chat.id, repr(exc))
+        emily.log_error("database", "prepare_user_state", user.id, chat.id, repr(exc))
 
     kind = emily.consume_generation(user.id)
     if not kind:
@@ -283,27 +309,16 @@ async def fast_handle_message(update: Update, context) -> None:
     purpose = "playful roast" if row["mode"] == "roast" or any(k in message.text.lower() for k in emily.RUDE_KEYWORDS) else "normal chat"
 
     try:
-        # Intentionally no send_chat_action(TYPING) here: that is an extra
-        # Telegram API round-trip on every message and adds latency.
+        # No typing action here: it is an additional Telegram network round-trip.
         reply = await emily.ask_ai(user.id, chat.id, message.text, row["mode"], purpose)
-        emily.save_message(user.id, chat.id, "user", message.text)
-        emily.save_message(user.id, chat.id, "assistant", reply)
-        if purpose == "playful roast":
-            with emily.closing(emily.db()) as conn:
-                conn.execute(
-                    "INSERT INTO roasts(user_id,user_message,roast_response,timestamp) VALUES(?,?,?,?)",
-                    (user.id, message.text[:4000], reply[:4000], emily.now_iso()),
-                )
-                conn.execute("UPDATE users SET roasts_count=roasts_count+1 WHERE user_id=?", (user.id,))
-                conn.commit()
+        await asyncio.to_thread(_persist_exchange, user, chat, message.text, reply, purpose)
         await message.reply_text(reply)
     except Exception as exc:
         emily.refund_generation(user.id, kind)
         error_type = emily.classify_ai_error(exc)
         emily.log_error(error_type, "chat", user.id, chat.id, repr(exc))
         emily.logger.exception("AI request failed")
-        user_message = emily.user_error_message(error_type).replace("Emily", "Alisa")
-        await message.reply_text(user_message)
+        await message.reply_text(emily.user_error_message(error_type).replace("Emily", "Alisa"))
 
 
 emily.handle_message = fast_handle_message
@@ -324,6 +339,111 @@ async def profile_sync(update: Update, context) -> None:
         await asyncio.to_thread(sync_user, update, emily.db)
     except Exception:
         emily.logger.exception("Profile sync failed")
+
+
+# ---------- Admin user action buttons ----------
+
+# The existing UI showed moderation as a command-help screen. Replace those
+# buttons at runtime with real admin-only actions and confirmations.
+def admin_user_keyboard(user_id: int):
+    try:
+        banned = bool(emily.get_user(user_id)["is_banned"])
+    except Exception:
+        banned = False
+    moderation = (
+        InlineKeyboardButton("✅ Unban User", callback_data=f"admin:unban_confirm:{user_id}")
+        if banned
+        else InlineKeyboardButton("🚫 Ban User", callback_data=f"admin:ban_confirm:{user_id}")
+    )
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ Add Credits", callback_data=f"admin:user_help:{user_id}:credits"), InlineKeyboardButton("⭐ Plan", callback_data=f"admin:user_help:{user_id}:plan")],
+        [moderation, InlineKeyboardButton("🧠 Memory", callback_data=f"admin:user_help:{user_id}:memory")],
+        [InlineKeyboardButton("🔄 Refresh", callback_data=f"admin:user:{user_id}"), InlineKeyboardButton("👥 Directory", callback_data="admin:users:0")],
+        [InlineKeyboardButton("⬅️ Admin Home", callback_data="admin:home")],
+    ])
+
+
+ui.admin_user_keyboard = admin_user_keyboard
+_original_callback = emily.callback_handler
+
+
+async def admin_callback(update, context):
+    query = update.callback_query
+    data = query.data if query else ""
+    uid = query.from_user.id if query and query.from_user else None
+    if not query or not query.message or not uid:
+        return
+    if not emily.is_admin(uid):
+        return await _original_callback(update, context)
+
+    if data.startswith("admin:ban_confirm:") or data.startswith("admin:unban_confirm:"):
+        parts = data.split(":")
+        action = parts[1]
+        target = parts[2] if len(parts) > 2 else ""
+        if not target.isdigit():
+            await query.answer("Invalid user.", show_alert=True)
+            return
+        target_id = int(target)
+        banned = bool(emily.get_user(target_id)["is_banned"]) if target_id else False
+        if action == "ban_confirm":
+            if banned:
+                await query.answer("User is already banned.", show_alert=True)
+                return
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("⚠️ Confirm Ban", callback_data=f"admin:ban_apply:{target_id}"), InlineKeyboardButton("Cancel", callback_data=f"admin:user:{target_id}")],
+            ])
+            await query.answer()
+            await query.message.edit_text(
+                f"⚠️ <b>Confirm user ban</b>\n\n🆔 <code>{target_id}</code>\n\nThis immediately blocks Alisa AI access for this user.",
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+            return
+        if not banned:
+            await query.answer("User is already unbanned.", show_alert=True)
+            return
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Confirm Unban", callback_data=f"admin:unban_apply:{target_id}"), InlineKeyboardButton("Cancel", callback_data=f"admin:user:{target_id}")],
+        ])
+        await query.answer()
+        await query.message.edit_text(
+            f"✅ <b>Confirm user unban</b>\n\n🆔 <code>{target_id}</code>\n\nThis restores normal Alisa access.",
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+        return
+
+    if data.startswith("admin:ban_apply:") or data.startswith("admin:unban_apply:"):
+        parts = data.split(":")
+        action = parts[1]
+        target = parts[2] if len(parts) > 2 else ""
+        if not target.isdigit():
+            await query.answer("Invalid user.", show_alert=True)
+            return
+        target_id = int(target)
+        if action == "ban_apply" and target_id == uid:
+            await query.answer("You cannot ban the administrator account.", show_alert=True)
+            return
+        state = 1 if action == "ban_apply" else 0
+        with emily.closing(emily.db()) as conn:
+            result = conn.execute("UPDATE users SET is_banned=? WHERE user_id=?", (state, target_id))
+            conn.commit()
+        if result.rowcount != 1:
+            await query.answer("User not found.", show_alert=True)
+            return
+        _notified, note = await _notify_access_change(context.bot, target_id, not state)
+        await query.answer("Updated")
+        await query.message.edit_text(
+            (f"🚫 <b>User banned</b>\n\n🆔 <code>{target_id}</code>\n📨 {note}" if state else f"✅ <b>User unbanned</b>\n\n🆔 <code>{target_id}</code>\n📨 {note}"),
+            parse_mode="HTML",
+            reply_markup=admin_user_keyboard(target_id),
+        )
+        return
+
+    return await _original_callback(update, context)
+
+
+emily.callback_handler = admin_callback
 
 
 async def ai_status(update, context) -> None:
@@ -351,7 +471,6 @@ async def users_command(update, context) -> None:
     if not user or not emily.is_admin(user.id) or not update.effective_message:
         return
     from admin_users import user_directory_rows
-    from ui_controller import admin_users_keyboard
     rows, total = user_directory_rows(emily.db, 0)
     lines = [f"👥 <b>User Directory</b> · {total} total", ""]
     for row in rows:
@@ -359,7 +478,12 @@ async def users_command(update, context) -> None:
         username = f"@{row['username']}" if row["username"] else "No username"
         status = "🚫 BANNED" if row["is_banned"] else row["plan"].title()
         lines.append(f"<b>{name}</b> · {username}\n🆔 <code>{row['user_id']}</code> · 💰 {row['credits']} credits · {status}")
-    await update.effective_message.reply_text("\n\n".join(lines), parse_mode="HTML", reply_markup=admin_users_keyboard(0, total, rows))
+    await update.effective_message.reply_text("\n\n".join(lines), parse_mode="HTML", reply_markup=admin_user_keyboard(rows[0]["user_id"]) if False and rows else None)
+    # Keep the established directory navigation generated by ui_controller.
+    if rows:
+        from ui_controller import admin_users_keyboard
+        await update.effective_message.delete()
+        await update.effective_message.reply_text("\n\n".join(lines), parse_mode="HTML", reply_markup=admin_users_keyboard(0, total, rows))
 
 
 # ---------- Faster broadcast ----------
@@ -400,7 +524,7 @@ async def fast_announce(update, context) -> None:
                     await asyncio.sleep(0.5 * (attempt + 1))
         return False
 
-    results = await asyncio.gather(*(deliver(int(row["user_id"])) for row in rows), return_exceptions=False)
+    results = await asyncio.gather(*(deliver(int(row["user_id"])) for row in rows))
     sent = sum(1 for ok in results if ok)
     failed = len(results) - sent
     await message.reply_text(f"📢 <b>Broadcast finished</b>\n\n✅ Sent: {sent}\n❌ Failed: {failed}", parse_mode="HTML")
