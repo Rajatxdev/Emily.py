@@ -1,54 +1,69 @@
-# Emily Telegram AI Bot
+# Alisa — Telegram AI Companion
 
-Emily is a lightweight Telegram AI companion and group assistant designed for easy Termux use.
+> A small Telegram AI bot I built to make chatting, group help, memory, and a few fun features feel simple and personal.
 
-## Product rules
+Alisa is a lightweight AI companion that runs directly through Telegram. It can chat with you, remember useful things you choose to save, change personality, help in groups, and give the admin a private control center.
 
-**Free:**  
-50 AI replies/day
+It is intentionally a **small project**. There is no separate web dashboard, no large backend, and no complicated infrastructure.
 
-**Credits:**  
-1 credit = 1 AI generation
+## ✨ What can Alisa do?
 
-**Premium later:**  
-higher quota + special features
+- 💬 **AI chat** — talk naturally in Telegram.
+- 🎭 **6 personalities** — Bestie, Study, Roast, Calm, Coding, Hype.
+- 🧠 **Memory** — save, view, and delete things Alisa should remember.
+- 👥 **Group assistant** — respond when mentioned or replied to.
+- 🧾 **Group recap** — summarize recent group-visible conversation.
+- ✨ **Alisa Moments** — small creative prompts and fun interactions.
+- 💳 **Usage system** — 50 free AI replies per day + 1 credit per extra generation.
+- 🚫 **Moderation** — admin can ban/unban users and the affected user is clearly told what happened.
+- 📊 **Admin Control Center** — users, AI keys, usage, errors, moderation, broadcasts, data and health.
+- ⚡ **Fast processing** — concurrent Telegram updates, non-blocking database work, and multiple AI keys with automatic failover.
 
-Premium is only an internal plan flag for now; there is no payment system.
+## 🧠 How it works
 
-## Stack
+The flow is simple:
 
-Python + python-telegram-bot 22.8 + SQLite + direct HTTPS calls to Gemini and OpenAI.
+**Telegram → Alisa → AI provider → Telegram**
 
-The runtime uses no OpenAI or Gemini SDK, keeping Termux installation small and avoiding unnecessary native build dependencies.
+SQLite stores the small amount of information Alisa needs, such as user profiles, usage, memories, conversation history, and errors.
 
-## AI reliability
+For AI requests, Alisa can use up to 6 configured API keys:
 
-Emily can use up to 6 API keys:
+- 4 Gemini keys
+- 2 OpenAI keys
 
-- `GEMINI_API_KEY_1` ... `GEMINI_API_KEY_4`
-- `OPENAI_API_KEY_1` ... `OPENAI_API_KEY_2`
+Alisa chooses a healthy/less-busy key and switches to another when a provider or key fails.
 
-Each request is assigned to the least-busy healthy key. If a key is rate-limited, times out, or hits a provider/network failure, it is cooled down and another key is tried. Authentication failures disable only that key. Multiple Telegram updates can be processed concurrently.
+## 🛠️ Built with
 
-Keys live only in environment variables; they are never stored in SQLite.
+- Python
+- `python-telegram-bot`
+- SQLite
+- Direct HTTPS calls to Gemini and OpenAI
+- Termux-friendly runtime
 
-## Features
+The project intentionally avoids heavyweight SDKs and extra backend services so it stays easy to run and maintain.
 
-- Recent conversation memory
-- User-controlled long-term memory
-- Automatic capture of simple facts such as name/study/likes
-- Personality modes: bestie, study, roast, calm, coding, hype
-- Group-safe mention/reply behavior
-- Group-visible history and `/group_summary`
-- `/moment` creative Emily Moments
-- SQLite quotas and one-credit-per-generation accounting
-- Failed AI generations are refunded
-- Telegram-only admin control center
-- User lookup, ban/unban, credits, plan flag, errors, CSV export and announcements
-- Automatic migration from old `alisa_bot.db` user records into `emily.db`
-- Lightweight GitHub CI checks
+## 📁 Project structure
 
-## Termux setup
+```text
+Emily.py/
+├── emily_ai_bot.py     # Core bot and main features
+├── run_emily.py        # Production launcher + performance wiring
+├── ai_router.py        # Gemini/OpenAI key pool and failover
+├── ui_controller.py    # User and admin Telegram menus
+├── admin_users.py      # User profiles and directory
+├── admin_dashboard.py  # Admin statistics
+├── admin_data.py       # Database tools
+├── .env.example        # Configuration template
+└── requirements.txt    # Runtime dependency
+```
+
+The repository and core filename still use `Emily.py` / `emily_ai_bot.py` for compatibility. **The actual bot name shown to users is Alisa.**
+
+## 🚀 Run it
+
+### Termux
 
 ```bash
 pkg update
@@ -60,45 +75,110 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Create a local `.env` file from `.env.example` and fill in your own values. Do not commit `.env`.
+Copy `.env.example` to `.env` and add your own Telegram and AI keys.
 
-Start Emily with:
+Then start Alisa:
 
 ```bash
 python run_emily.py
 ```
 
-The official bot source remains `emily_ai_bot.py`; `run_emily.py` only wires the multi-key router and concurrent Telegram processing.
+Keep `.env` private. Never commit API keys or your Telegram bot token.
 
-## Configuration
+## ⚙️ Configuration
 
-```text
-TELEGRAM_TOKEN=...
-ADMIN_USER_ID=...
-GEMINI_API_KEY_1=...
-GEMINI_API_KEY_2=...
-GEMINI_API_KEY_3=...
-GEMINI_API_KEY_4=...
-OPENAI_API_KEY_1=...
-OPENAI_API_KEY_2=...
-GEMINI_MODEL=gemini-3.8-flash
-OPENAI_MODEL=gpt-5-mini
+Required values are simple:
+
+```env
+TELEGRAM_TOKEN=your_bot_token
+ADMIN_USER_ID=your_telegram_user_id
+
+GEMINI_API_KEY_1=your_key
+GEMINI_API_KEY_2=your_key
+GEMINI_API_KEY_3=your_key
+GEMINI_API_KEY_4=your_key
+
+OPENAI_API_KEY_1=your_key
+OPENAI_API_KEY_2=your_key
 ```
 
-Optional: `EMILY_AI_TIMEOUT`, `EMILY_KEY_COOLDOWN`, `EMILY_FREE_DAILY`, `EMILY_PREMIUM_DAILY`, `EMILY_HISTORY_MESSAGES`, `EMILY_MAX_MEMORIES`.
+Model names can be left empty. Alisa discovers a usable text-generation model for each provider key automatically. Individual model overrides are also supported with names such as `GEMINI_MODEL_1` or `OPENAI_MODEL_1`.
 
-## Useful commands
+Optional settings include the AI timeout, key cooldown, free/premium quota, conversation history size, memory limit, and SQLite database filename.
 
-User: `/start`, `/help`, `/mode`, `/memory`, `/remember key = value`, `/forget key`, `/forget_all`, `/quota`, `/moment`, `/group_summary`, `/group_moments on|off`, `/privacy`, `/about`.
+## 👤 User commands
 
-Admin: `/admin`, `/stats`, `/user_info <id>`, `/ai_status`, `/ban_user <id>`, `/unban_user <id>`, `/add_credits <id> <amount>`, `/set_plan <id> free|premium`, `/errors`, `/export_data`, `/announce <message>`.
+```text
+/start
+/help
+/mode
+/memory
+/remember key = value
+/forget key
+/forget_all
+/quota
+/moment
+/group_summary
+/group_moments on|off
+/privacy
+/about
+/myid
+```
 
-## Testing
+In a group, Alisa normally answers when she is mentioned or when someone replies to her.
 
-Development-only dependencies are in `requirements-dev.txt`.
+## 🛠 Admin
+
+Only the configured admin can open the private Control Center.
+
+```text
+/admin
+/stats
+/ai_status
+/users
+/find_user <id|username>
+/user_info <id>
+/ban_user <id> [reason]
+/unban_user <id>
+/add_credits <id> <amount>
+/set_plan <id> free|premium
+/errors
+/export_data
+/announce <message>
+```
+
+The Telegram admin menu also provides buttons for user profiles, moderation, AI-key controls, dashboard statistics, error monitoring, data tools, and system health.
+
+## 🔐 Data and privacy
+
+Alisa keeps its local data in SQLite. User memory can be viewed and deleted with the memory commands. The AI provider keys are kept in environment variables and are not stored in the database.
+
+There is no payment system yet. `premium` is currently just an internal plan flag for future use.
+
+## ⚡ Performance and reliability
+
+The bot is designed to stay responsive even when several users message it around the same time.
+
+- Multiple Telegram updates can run concurrently.
+- Slow SQLite work is moved away from the main Telegram event loop.
+- AI requests use a multi-key pool with failover.
+- Failed AI generations are refunded.
+- Temporary provider failures cool down the affected key instead of stopping the whole bot.
+- Broadcasts use controlled concurrency.
+- Ban/unban actions give the affected user a clear access message.
+
+No system can guarantee zero latency or zero provider downtime, but the project is designed to fail clearly and recover where possible.
+
+## 🧪 Test
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m py_compile emily_ai_bot.py ai_router.py run_emily.py
+python -m py_compile emily_ai_bot.py ai_router.py run_emily.py ui_controller.py admin_users.py admin_data.py admin_dashboard.py
 pytest -q
 ```
+
+## 💡 Why I built it
+
+I wanted a small AI bot that feels more like a real Telegram product than a basic API demo — something with personality, memory, group support, usage control, and a practical admin side, without turning it into a huge system.
+
+**Built as a small, practical project.**
