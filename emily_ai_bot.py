@@ -15,7 +15,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from typing import Optional
 
-from telegram import ChatAction, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest, Forbidden, RetryAfter
 from telegram.ext import Application, ApplicationBuilder, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -621,7 +621,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await message.reply_text(f"I'm out of AI replies for now 🥺\n\n{quota_text(user.id)}\n\nFree = 50 replies/day • 1 credit = 1 AI generation"); return
     row = get_user(user.id); purpose = "playful roast" if row["mode"] == "roast" or any(k in message.text.lower() for k in RUDE_KEYWORDS) else "normal chat"
     try:
-        await context.bot.send_chat_action(chat_id=chat.id, action=ChatAction.TYPING)
         reply = await ask_ai(user.id, chat.id, message.text, row["mode"], purpose)
         save_message(user.id, chat.id, "user", message.text); save_message(user.id, chat.id, "assistant", reply)
         if purpose == "playful roast":
