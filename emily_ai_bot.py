@@ -266,8 +266,8 @@ def get_memories(user_id: int) -> list[sqlite3.Row]:
 def extract_simple_memories(text: str) -> list[tuple[str, str]]:
     found = []
     for pattern, key in [
-        (r"\bmy name is\s+([A-Za-z][A-Za-z .'-]{1,30})\b", "name"),
-        (r"\bcall me\s+([A-Za-z][A-Za-z .'-]{1,30})\b", "name"),
+        (r"\bmy name is\s+([A-Za-z][A-Za-z .'-]{0,30}?)(?=\s+(?:and\s+I\b|I\s+(?:study|like|love|hate)\b)|[.!?,]|$)", "name"),
+        (r"\bcall me\s+([A-Za-z][A-Za-z .'-]{0,30}?)(?=\s+(?:and\s+I\b|I\s+(?:study|like|love|hate)\b)|[.!?,]|$)", "name"),
         (r"\bi study\s+([^.!?]{2,60})", "study"),
         (r"\bi like\s+([^.!?]{2,80})", "likes"),
         (r"\bi love\s+([^.!?]{2,80})", "likes"),
