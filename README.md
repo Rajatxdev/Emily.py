@@ -1,6 +1,6 @@
 # Alisa — Telegram AI Companion
 
-[![Python checks](https://github.com/Rajatxdev/Emily.py/actions/workflows/python.yml/badge.svg)](https://github.com/Rajatxdev/Emily.py/actions/workflows/python.yml)
+[![Python checks](https://github.com/Rajatxdev/Emily.py/actions/workflows/test.yml/badge.svg)](https://github.com/Rajatxdev/Emily.py/actions/workflows/test.yml)
 
 > A small Telegram AI bot I built to make chatting, group help, memory, and a few fun features feel simple and personal.
 
@@ -62,7 +62,7 @@ Emily.py/
 ├── requirements-dev.txt # Offline test dependency
 ├── tests/
 │   └── test_ai_router.py # Router unit tests
-└── .github/workflows/python.yml # Automated compile + test checks
+└── .github/workflows/test.yml # Automated compile + test checks
 ```
 
 The repository and core filename still use `Emily.py` / `emily_ai_bot.py` for compatibility. **The actual bot name shown to users is Alisa.**
