@@ -1,10 +1,10 @@
 # Alisa — Telegram AI Companion
 
-[![Python checks](https://github.com/Rajatxdev/Emily.py/actions/workflows/test.yml/badge.svg)](https://github.com/Rajatxdev/Emily.py/actions/workflows/test.yml)
+[![Alisa checks](https://github.com/Rajatxdev/Emily.py/actions/workflows/test.yml/badge.svg)](https://github.com/Rajatxdev/Emily.py/actions/workflows/test.yml)
 
 > A small Telegram AI bot I built to make chatting, group help, memory, and a few fun features feel simple and personal.
 
-Alisa is a lightweight AI companion that runs directly through Telegram. It can chat with you, remember useful things you choose to save, change personality, help in groups, and give the admin a private control center.
+Alisa is a lightweight AI companion that runs directly through Telegram. It can chat with you, remember useful details, change personality, help in groups, and give the admin a private control center.
 
 It is intentionally a **small project**. There is no separate web dashboard, no large backend, and no complicated infrastructure.
 
@@ -12,9 +12,9 @@ It is intentionally a **small project**. There is no separate web dashboard, no 
 
 - 💬 **AI chat** — talk naturally in Telegram.
 - 🎭 **6 personalities** — Bestie, Study, Roast, Calm, Coding, Hype.
-- 🧠 **Memory** — save, view, and delete things Alisa should remember.
+- 🧠 **Memory** — save, review, and delete memories, including simple facts recognized from messages.
 - 👥 **Group assistant** — respond when mentioned or replied to.
-- 🧾 **Group recap** — summarize recent group-visible conversation.
+- 🧾 **Group recap** — summarize recent interactions with Alisa in a group.
 - ✨ **Alisa Moments** — small creative prompts and fun interactions.
 - 💳 **Usage system** — 50 free AI replies per day + 1 credit per extra generation.
 - 🚫 **Moderation** — admin can ban/unban users and the affected user is clearly told what happened.
@@ -61,8 +61,11 @@ Emily.py/
 ├── requirements.txt    # Runtime dependency
 ├── requirements-dev.txt # Offline test dependency
 ├── tests/
-│   └── test_ai_router.py # Router unit tests
-└── .github/workflows/test.yml # Automated compile + test checks
+│   ├── test_ai_router.py # Router unit tests
+│   └── test_emily_ai_bot.py # Bot/database unit tests
+└── .github/
+    └── workflows/
+        └── test.yml # Automated compile + test checks
 ```
 
 The repository and core filename still use `Emily.py` / `emily_ai_bot.py` for compatibility. **The actual bot name shown to users is Alisa.**
@@ -88,6 +91,8 @@ cp .env.example .env
 nano .env
 ```
 
+Create your Telegram bot using `@BotFather` and get your numeric Telegram user ID (for example, from a Telegram ID helper bot). Get at least one API key from Gemini or OpenAI, then add those values to `.env`.
+
 Set your Telegram bot token, your numeric Telegram user ID as `ADMIN_USER_ID`, and at least one AI API key. **Leave unused AI key slots blank**; don't leave the template's placeholder text in them.
 
 Then start Alisa:
@@ -106,13 +111,14 @@ Required values are simple:
 TELEGRAM_TOKEN=your_bot_token
 ADMIN_USER_ID=your_telegram_user_id
 
-GEMINI_API_KEY_1=your_key
-GEMINI_API_KEY_2=your_key
-GEMINI_API_KEY_3=your_key
-GEMINI_API_KEY_4=your_key
+# Add at least one AI key. Keep unused slots blank.
+GEMINI_API_KEY_1=your_gemini_key
+GEMINI_API_KEY_2=
+GEMINI_API_KEY_3=
+GEMINI_API_KEY_4=
 
-OPENAI_API_KEY_1=your_key
-OPENAI_API_KEY_2=your_key
+OPENAI_API_KEY_1=
+OPENAI_API_KEY_2=
 ```
 
 Model names can be left empty. Alisa discovers a usable text-generation model for each provider key automatically. Individual model overrides are also supported with names such as `GEMINI_MODEL_1` or `OPENAI_MODEL_1`.
