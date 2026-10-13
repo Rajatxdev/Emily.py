@@ -9,7 +9,7 @@ from admin_data import database_stats
 from admin_users import my_id_text, user_directory_rows
 
 
-def user_home(emily) -> InlineKeyboardMarkup:
+def user_home(emily, user_id: int | None = None) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton("✨ What can Alisa do?", callback_data="user:help")],
         [InlineKeyboardButton("🆔 My Telegram ID", callback_data="user:myid")],
@@ -18,7 +18,7 @@ def user_home(emily) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("👥 Group Tools", callback_data="user:group"), InlineKeyboardButton("✨ Alisa Moment", callback_data="user:moment")],
         [InlineKeyboardButton("📖 All Commands", callback_data="user:commands"), InlineKeyboardButton("ℹ️ About", callback_data="user:about")],
     ]
-    if emily.is_admin(getattr(emily, "_ui_user_id", None)):
+    if emily.is_admin(user_id):
         rows.append([InlineKeyboardButton("🛠 ADMIN CONTROL CENTER", callback_data="admin:home")])
     return InlineKeyboardMarkup(rows)
 
@@ -140,14 +140,12 @@ def patch(emily, router):
         user = update.effective_user; msg = update.effective_message
         if not user or not msg: return
         emily.ensure_user(user.id, user.username)
-        emily._ui_user_id = user.id
         text = f"💗 <b>Hey, I'm Alisa</b>  ·  v{emily.VERSION}\n\nYour AI companion + group assistant.\nChat naturally, switch personalities, let me remember useful things, or use group tools.\n\n🎁 Free: <b>50 AI replies/day</b>\n💳 1 credit = <b>1 AI generation</b>\n⭐ Premium: higher quota + special features"
-        await msg.reply_text(text, parse_mode="HTML", reply_markup=user_home(emily))
+        await msg.reply_text(text, parse_mode="HTML", reply_markup=user_home(emily, user.id))
 
     async def admin_panel(update, context):
         user = update.effective_user; msg = update.effective_message
         if not user or not msg or not emily.is_admin(user.id): return
-        emily._ui_user_id = user.id
         await msg.reply_text("🛠 <b>Alisa Control Center</b>\n\nAll important controls are available below.", parse_mode="HTML", reply_markup=admin_home())
 
     async def callback(update, context):
@@ -155,7 +153,6 @@ def patch(emily, router):
         if not query or not query.message: return
         data = query.data or ""
         uid = query.from_user.id
-        emily._ui_user_id = uid
         await query.answer()
 
         if data.startswith("mode:"):
@@ -170,14 +167,14 @@ def patch(emily, router):
         if data.startswith("user:"):
             key = data.split(":", 1)[1]
             emily.ensure_user(uid, query.from_user.username)
-            if key == "home": await query.message.edit_text("💗 <b>Alisa</b>\n\nChoose what you want to explore:", parse_mode="HTML", reply_markup=user_home(emily))
+            if key == "home": await query.message.edit_text("💗 <b>Alisa</b>\n\nChoose what you want to explore:", parse_mode="HTML", reply_markup=user_home(emily, uid))
             elif key == "myid": await query.message.edit_text(my_id_text(update), parse_mode="HTML", reply_markup=back())
             elif key in {"help", "commands"}: await query.message.edit_text(user_commands_text(), parse_mode="HTML", reply_markup=back())
             elif key == "modes": await query.message.edit_text("🎭 <b>Choose Alisa's personality</b>\n\nEach mode changes her tone and how she approaches your request.", parse_mode="HTML", reply_markup=emily.mode_keyboard())
             elif key == "memory": await query.message.edit_text("🧠 <b>Your Memory</b>\n\n" + ("\n".join(f"• <b>{escape(r['memory_key'])}</b>: {escape(r['memory_value'])}" for r in emily.get_memories(uid)) or "Nothing saved yet."), parse_mode="HTML", reply_markup=back())
             elif key == "quota": await query.message.edit_text("💳 <b>Your Alisa account</b>\n\n" + escape(emily.quota_text(uid)), parse_mode="HTML", reply_markup=back())
-            elif key == "privacy": await query.message.edit_text("🔐 <b>Privacy</b>\n\n• Long-term memories are stored locally in SQLite.\n• /memory lets you inspect them.\n• /forget deletes one.\n• /forget_all deletes everything.\n• Alisa uses a limited recent conversation window.", parse_mode="HTML", reply_markup=back())
-            elif key == "group": await query.message.edit_text("👥 <b>Group tools</b>\n\n• Mention Alisa or reply to her to chat.\n• /group_summary — summarize recent visible conversation.\n• /group_moments on|off — group admins control Alisa Moments.", parse_mode="HTML", reply_markup=back())
+            elif key == "privacy": await query.message.edit_text("🔐 <b>Privacy</b>\n\n• Recent chat history and memories are stored in local SQLite.\n• Alisa may auto-save simple facts from messages; review them with /memory.\n• /forget deletes one memory; /forget_all clears all of them.\n• Recent messages and relevant chat history are sent to the configured AI provider to generate replies.", parse_mode="HTML", reply_markup=back())
+            elif key == "group": await query.message.edit_text("👥 <b>Group tools</b>\n\n• Mention Alisa or reply to her to chat.\n• /group_summary — summarize recent interactions with Alisa.\n• /group_moments on|off — group admins control Alisa Moments.", parse_mode="HTML", reply_markup=back())
             elif key == "moment": await query.message.edit_text("✨ <b>Alisa Moment</b>\n\nUse /moment for a short creative prompt, challenge or fun community moment.", parse_mode="HTML", reply_markup=back())
             elif key == "about": await query.message.edit_text(f"ℹ️ <b>Alisa v{escape(emily.VERSION)}</b>\n\nSQLite memory + quotas + credits + personality modes + group tools.\n\nAI providers are routed through the multi-key pool.", parse_mode="HTML", reply_markup=back())
             return
