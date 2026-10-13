@@ -140,7 +140,7 @@ def patch(emily, router):
         user = update.effective_user; msg = update.effective_message
         if not user or not msg: return
         emily.ensure_user(user.id, user.username)
-        text = f"💗 <b>Hey, I'm Alisa</b>  ·  v{emily.VERSION}\n\nYour AI companion + group assistant.\nChat naturally, switch personalities, let me remember useful things, or use group tools.\n\n🎁 Free: <b>50 AI replies/day</b>\n💳 1 credit = <b>1 AI generation</b>\n⭐ Premium: higher quota + special features"
+        text = f"💗 <b>Hey, I'm Alisa</b>  ·  v{emily.VERSION}\n\nYour AI companion + group assistant.\nChat naturally, switch personalities, let me remember useful things, or use group tools.\n\n🎁 Free: <b>50 AI replies/day</b>\n💳 1 credit = <b>1 AI generation</b>\n⭐ Premium: higher daily quota"
         await msg.reply_text(text, parse_mode="HTML", reply_markup=user_home(emily, user.id))
 
     async def admin_panel(update, context):
