@@ -75,7 +75,14 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Copy `.env.example` to `.env` and add your own Telegram and AI keys.
+Create your private environment file and edit it:
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Set your Telegram bot token, your numeric Telegram user ID as `ADMIN_USER_ID`, and at least one AI API key. **Leave unused AI key slots blank**; don't leave the template's placeholder text in them.
 
 Then start Alisa:
 
@@ -151,7 +158,11 @@ The Telegram admin menu also provides buttons for user profiles, moderation, AI-
 
 ## 🔐 Data and privacy
 
-Alisa keeps its local data in SQLite. User memory can be viewed and deleted with the memory commands. The AI provider keys are kept in environment variables and are not stored in the database.
+Alisa keeps user profiles, usage, recent chat history, saved memories, group settings, and recorded errors in a local SQLite database. The recent conversation context and your current message are sent to the configured AI provider when Alisa generates a reply.
+
+Memory can be saved with `/remember`; Alisa also recognizes a small set of simple phrases (such as “my name is” and “I like”) and may save them automatically. Review memories with `/memory`, remove one with `/forget`, or clear them with `/forget_all`.
+
+API keys are read from `.env`, not stored in SQLite. Keep `.env` private and protect the device/server and database file. SQLite data is not encrypted by this bot. Review the privacy terms of your chosen AI provider before using it with sensitive information.
 
 There is no payment system yet. `premium` is currently just an internal plan flag for future use.
 
@@ -182,3 +193,5 @@ pytest -q
 I wanted a small AI bot that feels more like a real Telegram product than a basic API demo — something with personality, memory, group support, usage control, and a practical admin side, without turning it into a huge system.
 
 **Built as a small, practical project.**
+
+> **Testing note:** the automated tests cover local AI-router helper logic and run without live Telegram/API credentials. A real end-to-end check still requires your own valid bot token and at least one working AI API key.
