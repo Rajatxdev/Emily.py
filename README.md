@@ -1,5 +1,7 @@
 # Alisa — Telegram AI Companion
 
+[![Python checks](https://github.com/Rajatxdev/Emily.py/actions/workflows/python.yml/badge.svg)](https://github.com/Rajatxdev/Emily.py/actions/workflows/python.yml)
+
 > A small Telegram AI bot I built to make chatting, group help, memory, and a few fun features feel simple and personal.
 
 Alisa is a lightweight AI companion that runs directly through Telegram. It can chat with you, remember useful things you choose to save, change personality, help in groups, and give the admin a private control center.
@@ -56,7 +58,11 @@ Emily.py/
 ├── admin_dashboard.py  # Admin statistics
 ├── admin_data.py       # Database tools
 ├── .env.example        # Configuration template
-└── requirements.txt    # Runtime dependency
+├── requirements.txt    # Runtime dependency
+├── requirements-dev.txt # Offline test dependency
+├── tests/
+│   └── test_ai_router.py # Router unit tests
+└── .github/workflows/python.yml # Automated compile + test checks
 ```
 
 The repository and core filename still use `Emily.py` / `emily_ai_bot.py` for compatibility. **The actual bot name shown to users is Alisa.**
@@ -188,10 +194,14 @@ python -m py_compile emily_ai_bot.py ai_router.py run_emily.py ui_controller.py 
 pytest -q
 ```
 
+The tests use mocked/local inputs only; they do not call Telegram or consume AI API quota. The GitHub Actions workflow runs the same compile and test checks on pushes and pull requests.
+
 ## 💡 Why I built it
 
 I wanted a small AI bot that feels more like a real Telegram product than a basic API demo — something with personality, memory, group support, usage control, and a practical admin side, without turning it into a huge system.
 
 **Built as a small, practical project.**
 
-> **Testing note:** the automated tests cover local AI-router helper logic and run without live Telegram/API credentials. A real end-to-end check still requires your own valid bot token and at least one working AI API key.
+## 📄 Reuse
+
+This repository does not currently include a license file. Before redistributing or reusing the code in another project, ask the author or add an explicit open-source license.
