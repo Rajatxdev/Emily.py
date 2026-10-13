@@ -40,11 +40,11 @@ if not os.getenv("OPENAI_API_KEY"):
 
 
 def generate_via_router(instructions, messages):
-    return router.generate_sync(instructions.replace("Emily", "Alisa"), messages)
+    return router.generate_sync(instructions, messages)
 
 
 emily.openai_responses_create = generate_via_router
-emily.VERSION = "3.7.0-performance-safety"
+emily.VERSION = "3.8.0"
 emily.init_db()
 migrate_profile_columns(emily.db)
 ui.patch(emily, router)
@@ -319,7 +319,7 @@ async def fast_handle_message(update: Update, context) -> None:
         error_type = emily.classify_ai_error(exc)
         await asyncio.to_thread(emily.log_error, error_type, "chat", user.id, chat.id, repr(exc))
         emily.logger.exception("AI request failed")
-        await message.reply_text(emily.user_error_message(error_type).replace("Emily", "Alisa"))
+        await message.reply_text(emily.user_error_message(error_type))
 
 
 emily.handle_message = fast_handle_message
