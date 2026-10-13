@@ -51,7 +51,7 @@ The project intentionally avoids heavyweight SDKs and extra backend services so 
 ```text
 Emily.py/
 ├── emily_ai_bot.py     # Core bot and main features
-├── run_emily.py        # Production launcher + performance wiring
+├── run_emily.py        # Recommended launcher + performance wiring
 ├── ai_router.py        # Gemini/OpenAI key pool and failover
 ├── ui_controller.py    # User and admin Telegram menus
 ├── admin_users.py      # User profiles and directory
@@ -59,10 +59,10 @@ Emily.py/
 ├── admin_data.py       # Database tools
 ├── .env.example        # Configuration template
 ├── requirements.txt    # Runtime dependency
+├── test_emily_ai_bot.py # Bot/database unit tests
 ├── requirements-dev.txt # Offline test dependency
 ├── tests/
-│   ├── test_ai_router.py # Router unit tests
-│   └── test_emily_ai_bot.py # Bot/database unit tests
+│   └── test_ai_router.py # Router unit tests
 └── .github/
     └── workflows/
         └── test.yml # Automated compile + test checks
