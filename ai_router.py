@@ -207,7 +207,7 @@ class AIRouter:
     def _openai(self, item: ProviderKey, instructions: str, messages: list[dict[str, str]]) -> str:
         self._ensure_model(item)
         body = json.dumps({"model": item.model, "instructions": instructions, "input": messages, "max_output_tokens": 500}).encode("utf-8")
-        request = urllib.request.Request(OPENAI_URL, data=body, headers={"Authorization": f"Bearer {item.key}", "Content-Type": "application/json", "User-Agent": "AlisaTelegramBot/3.1"}, method="POST")
+        request = urllib.request.Request(OPENAI_URL, data=body, headers={"Authorization": f"Bearer {item.key}", "Content-Type": "application/json", "User-Agent": "AlisaTelegramBot/3.8.0"}, method="POST")
         try:
             with urllib.request.urlopen(request, timeout=AI_TIMEOUT) as response:
                 payload = json.loads(response.read().decode("utf-8"))
@@ -254,7 +254,7 @@ class AIRouter:
             "contents": contents,
             "generationConfig": {"maxOutputTokens": 500},
         }).encode("utf-8")
-        request = urllib.request.Request(GEMINI_URL.format(model=item.model), data=body, headers={"x-goog-api-key": item.key, "Content-Type": "application/json", "User-Agent": "AlisaTelegramBot/3.1"}, method="POST")
+        request = urllib.request.Request(GEMINI_URL.format(model=item.model), data=body, headers={"x-goog-api-key": item.key, "Content-Type": "application/json", "User-Agent": "AlisaTelegramBot/3.8.0"}, method="POST")
         try:
             with urllib.request.urlopen(request, timeout=AI_TIMEOUT) as response:
                 payload = json.loads(response.read().decode("utf-8"))
