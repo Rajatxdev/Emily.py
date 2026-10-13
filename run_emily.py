@@ -91,10 +91,8 @@ _profile_lock = Lock()
 
 
 def _is_banned(user_id: int) -> bool:
-    try:
-        return bool(emily.get_user(user_id)["is_banned"])
-    except Exception:
-        return False
+    # Fail closed on database errors. A broken ban check must never grant AI access.
+    return bool(emily.get_user(user_id)["is_banned"])
 
 
 async def _tell_banned(update, _context) -> bool:
@@ -374,6 +372,12 @@ async def admin_callback(update, context):
     data = query.data if query else ""
     uid = query.from_user.id if query and query.from_user else None
     if not query or not query.message or not uid:
+        return
+
+    # Every admin callback must be authorized before any custom callback action runs.
+    # In particular, ban/unban callbacks are handled here before the core UI handler.
+    if data.startswith("admin:") and not emily.is_admin(uid):
+        await query.answer("Not authorized.", show_alert=True)
         return
 
     if data.startswith("admin:ban_confirm:") or data.startswith("admin:unban_confirm:"):
